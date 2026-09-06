@@ -228,7 +228,7 @@ try {
         $hasLock = Test-Path -LiteralPath (Join-Path $RepoRoot 'package-lock.json')
         Write-Planned $(if ($hasLock) { 'npm ci' } else { 'npm install (brak package-lock.json)' })
         Write-Planned 'npm run build'
-        Write-Planned "npx @vscode/vsce package  (oczekiwany plik: $expectedVsixName)"
+        Write-Planned "npx @vscode/vsce package --allow-missing-repository --skip-license  (oczekiwany plik: $expectedVsixName)"
         $vsixPath = Join-Path $RepoRoot $expectedVsixName
     }
     else {
@@ -249,8 +249,16 @@ try {
             npm run build
             if ($LASTEXITCODE -ne 0) { throw "npm run build zakonczyl sie kodem $LASTEXITCODE." }
 
-            Write-Step 'npx @vscode/vsce package'
-            npx @vscode/vsce package
+            # --allow-missing-repository i --skip-license sa OBOWIAZKOWE, nie kosmetyczne:
+            # bez pola "repository" w package.json i bez pliku LICENSE, vsce (bez tych flag)
+            # wypisuje ostrzezenie i pyta interaktywnie "Do you want to continue? [y/N]" -
+            # na maszynie bez interakcji (a to jedyny scenariusz, do ktorego ten instalator
+            # sluzy) proces staje w miejscu bez zadnego widocznego bledu i konczy sie
+            # dopiero po "Aborted" przy zamknieciu stdin. Repo dzis nie ma ani "repository",
+            # ani "license"/pliku LICENSE (wybor licencji nalezy do wlasciciela) - te dwie
+            # flagi sa jedynym sposobem, zeby vsce mimo to zapakowal bez pytania.
+            Write-Step 'npx @vscode/vsce package --allow-missing-repository --skip-license'
+            npx @vscode/vsce package --allow-missing-repository --skip-license
             if ($LASTEXITCODE -ne 0) { throw "vsce package zakonczyl sie kodem $LASTEXITCODE." }
         }
         finally {
