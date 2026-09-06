@@ -119,14 +119,20 @@ function printTree(tasks) {
   const subagentsByParent = groupBy(subagents, (t) => t.parentId);
   const workersBySession = groupBy(attachedWorkers, (t) => t.sessionId);
 
-  const printNode = (task, depth) => {
+  const printNode = (task, depth, displayOverride) => {
     const indent = '  '.repeat(depth);
-    console.log(`${indent}[${task.kind}] ${task.status} | ${task.title} | id=${task.id}${task.sessionId ? ` | sessionId=${task.sessionId}` : ''}`);
+    const displayStatus = displayOverride ? `${task.status} -> WYSWIETLANE: w toku (potomek Running)` : task.status;
+    console.log(`${indent}[${task.kind}] ${displayStatus} | ${task.title} | id=${task.id}${task.sessionId ? ` | sessionId=${task.sessionId}` : ''}`);
     console.log(`${indent}    metaLine="${buildMetaLine(task)}"`);
   };
 
   for (const session of sessions) {
-    printNode(session, 0);
+    const runningDescendants = collectRunningDescendants(session.id, subagentsByParent, workersBySession.get(session.id) ?? []);
+    printNode(session, 0, runningDescendants.length > 0);
+    if (runningDescendants.length > 0) {
+      const earliestStartedAt = Math.min(...runningDescendants.map((d) => d.startedAt ?? Date.now()));
+      console.log(`    licznik rodzica (prezentacja): tyka od startedAt=${earliestStartedAt} (${new Date(earliestStartedAt).toISOString()}, potomek=${runningDescendants[0].id})`);
+    }
     const children = [...(subagentsByParent.get(session.id) ?? []), ...(workersBySession.get(session.id) ?? [])];
     printChildren(children, subagentsByParent, printNode, 1);
   }
@@ -137,6 +143,19 @@ function printTree(tasks) {
       printNode(task, 1);
     }
   }
+}
+
+// Kopia dokladnej logiki z media/main.js - patrz tam po pelny komentarz.
+function collectRunningDescendants(rootId, subagentsByParent, directWorkerChildren) {
+  const result = [];
+  const stack = [...(subagentsByParent.get(rootId) ?? []), ...directWorkerChildren];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node.status === 'running') result.push(node);
+    const grandchildren = subagentsByParent.get(node.id);
+    if (grandchildren) stack.push(...grandchildren);
+  }
+  return result;
 }
 
 function printChildren(children, subagentsByParent, printNode, depth) {

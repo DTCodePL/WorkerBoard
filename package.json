@@ -1,8 +1,8 @@
 {
   "name": "worker-board",
   "displayName": "Worker Board",
-  "description": "Sidebar panel showing what your Claude Code, Spark and Codex AI agents are doing right now, across sessions and subagents.",
-  "version": "0.5.1",
+  "description": "Live view of AI agent tasks: Claude Code sessions and subagents, Spark and Codex workers, grouped by conversation. / Podglad zadan agentow AI na zywo, zgrupowanych po konwersacji.",
+  "version": "0.6.0",
   "publisher": "dtcode",
   "license": "MIT",
   "icon": "media/icon.png",

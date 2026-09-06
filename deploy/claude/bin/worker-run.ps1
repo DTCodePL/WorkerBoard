@@ -14,10 +14,10 @@
 
 .PRZYKLADY
     .\worker-run.ps1 -Engine spark -Title "Refaktor tokenow" `
-        -BriefFile C:\tmp\brief.md -Repo D:\projects\DTCode\ZebraniFE
+        -BriefFile C:\tmp\brief.md -Repo D:\projects\MyApp
 
     .\worker-run.ps1 -Engine codex -Title "Test wrappera" `
-        -BriefFile C:\tmp\brief.md -Repo D:\projects\DTCode\ZebraniFE `
+        -BriefFile C:\tmp\brief.md -Repo D:\projects\MyApp `
         -Model gpt-5.6-luna -Effort low
 #>
 
@@ -46,7 +46,7 @@ param(
 Set-StrictMode -Version Latest
 
 # --- Funkcja: translacja sciezki Windows -> WSL --------------------------------
-# "D:\projects\DTCode\ZebraniFE" -> "/mnt/d/projects/DTCode/ZebraniFE"
+# "D:\projects\MyApp" -> "/mnt/d/projects/MyApp"
 function ConvertTo-WslPath {
     param(
         [Parameter(Mandatory)]

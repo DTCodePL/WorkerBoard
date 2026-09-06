@@ -14,7 +14,7 @@ Ten skill opisuje **jak** wywołać, nie **kiedy**.
 
 ## Dlaczego zawsze przez `worker-run.ps1`
 
-Oba silniki wywołuję wyłącznie przez wrapper `C:\Users\Damian\.claude\bin\worker-run.ps1`,
+Oba silniki wywołuję wyłącznie przez wrapper `C:\Users\<uzytkownik>\.claude\bin\worker-run.ps1`,
 nigdy surowym `wsl.exe` / `codex.cmd` bezpośrednio. Powód nie jest kosmetyczny:
 
 - **Spark nie zostawia żadnego śladu na dysku.** `~/.config/muse` w WSL zawiera
@@ -37,11 +37,11 @@ nawet przy szybkim, jednorazowym sprawdzeniu czegoś.
 Nie ma wersji na Windows. Działa wyłącznie w dystrybucji **Ubuntu**.
 
 ```powershell
-C:\Users\Damian\.claude\bin\worker-run.ps1 `
+$env:USERPROFILE\.claude\bin\worker-run.ps1 `
   -Engine spark `
   -Title "Krotki opis widoczny na karcie w panelu" `
   -BriefFile C:\...\brief.md `
-  -Repo D:\projects\DTCode\ZebraniFE
+  -Repo D:\projects\MyApp
 ```
 
 Domyślnie `-Model muse-spark-1.3-contributor`, `-Effort xhigh` — nadpisywalne
@@ -71,11 +71,11 @@ w samym CLI (wrapper nadpisuje domyślną wartością `xhigh`).
 Zalogowany kontem ChatGPT (Plus). Domyślny model konta: `gpt-5.6-terra`.
 
 ```powershell
-C:\Users\Damian\.claude\bin\worker-run.ps1 `
+$env:USERPROFILE\.claude\bin\worker-run.ps1 `
   -Engine codex `
   -Title "Krotki opis widoczny na karcie w panelu" `
   -BriefFile C:\...\brief.md `
-  -Repo D:\projects\DTCode\ZebraniFE `
+  -Repo D:\projects\MyApp `
   -Model gpt-5.6-luna -Effort low
 ```
 
@@ -95,7 +95,7 @@ równocześnie na konsolę i do logu.
   repozytorium) zostaje jak był.
 
 **Znana usterka środowiska:** `SSL_CERT_FILE` i `NODE_EXTRA_CA_CERTS` wskazują
-na nieistniejący `C:\Users\Damian\certs\win-ca-bundle.pem`, co wywala Codexowi
+na nieistniejący `C:\Users\<uzytkownik>\certs\win-ca-bundle.pem`, co wywala Codexowi
 transport MCP. **Wrapper czyści te dwie zmienne tylko dla procesu potomnego**
 (nigdy globalnie w sesji), gdy wskazują na nieistniejący plik — ręczne
 wywołanie CLI musi to zrobić samodzielnie.

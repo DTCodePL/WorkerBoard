@@ -106,12 +106,24 @@ body {
    wrapperze (nie na .card, ktory manipuluje marginesem/paddingiem przy
    hover-bleed powyzej - inline style na tym samym elemencie kolidowalby z
    ta regula, bo inline zawsze wygrywa nad selektorem :hover). Linia
-   prowadzaca w kolorze obramowan, tylko dla zagniezdzonych.
+   prowadzaca ma byc WYRAZNA (2px, kolor tekstu drugorzednego, nie
+   obramowan) - przy dwoch sesjach obok siebie subtelna 1px linia w kolorze
+   panel-border byla nieczytelna, hierarchia gubila sie.
    Uwaga: linia prowadzaca stoi w stalej pozycji (nie przesuwa sie per
    poziom glebokosci) - glebokosc widac po wcieciu tekstu, nie po pozycji
    linii. To swiadome uproszczenie, zeby uniknac kolizji z hover-bleed. */
 .card-nested .card-content {
-  border-left: 1px solid var(--vscode-panel-border);
+  border-left: 2px solid var(--vscode-descriptionForeground);
+}
+
+/* Blok dzieci jednego rodzica - odstep nad pierwszym i pod ostatnim
+   wierszem, zeby caly blok czytal sie jako calosc przynalezna do rodzica,
+   a nie jako ciag rownorzednych wierszy (myslacy problem przy dwoch
+   sesjach obok siebie: cudze dzieci przypisywane do zlego rodzica). */
+.card-children {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0;
 }
 
 /* Sesje czekajace na uzytkownika: wygaszone, wracaja do pelnej widocznosci
@@ -142,6 +154,12 @@ body {
   font-weight: 500;
   color: var(--vscode-foreground);
   letter-spacing: 0;
+}
+
+/* Jedyna roznica typograficzna miedzy wierszem rodzica (sesji) a dziecmi -
+   rozmiar i odstepy zostaja identyczne. */
+.card-title--session {
+  font-weight: 600;
 }
 
 /* Licznik i akcje dziela to samo miejsce (ta sama komorka gridu), zeby

@@ -31,7 +31,7 @@
     Ready: 'ready'
   };
 
-  const NESTING_STEP_PX = 8;
+  const NESTING_STEP_PX = 16;
   const CONTEXT_WARNING_RATIO = 0.8;
   const CONTEXT_DANGER_RATIO = 0.95;
 
@@ -115,11 +115,16 @@
     }
 
     for (const session of sortByStartedAtDesc(sessions)) {
-      list.appendChild(buildCard(session, 0));
       const directChildren = [
         ...(subagentsByParent.get(session.id) ?? []),
         ...(attachedWorkersBySession.get(session.id) ?? [])
       ];
+      // Status/licznik rodzica to WYLACZNIE prezentacja - TaskStatus w
+      // migawce zostaje nietkniety. Liczone na dowolnej glebokosci (wszyscy
+      // potomkowie sesji: subagenci zagniezdzeni dowolnie gleboko + workery
+      // dopiete przez sessionId), nigdy dla workerow "bez przypisania".
+      const runningDescendants = collectRunningDescendants(session.id, subagentsByParent, attachedWorkersBySession.get(session.id) ?? []);
+      list.appendChild(buildCard(session, 0, runningDescendants));
       appendChildrenRecursive(list, directChildren, subagentsByParent, 1);
     }
     root.appendChild(list);
@@ -131,15 +136,47 @@
     refreshTickInterval();
   }
 
+  // Zbiera WSZYSTKICH potomkow o statusie Running na dowolnej glebokosci pod
+  // danym korzeniem (id sesji) - subagenci przez subagentsByParent
+  // (rekurencyjnie), workery tylko jako bezposrednie dzieci sesji (workery
+  // sa zawsze lisciem, nigdy nie maja wlasnych dalszych dzieci).
+  function collectRunningDescendants(rootId, subagentsByParent, directWorkerChildren) {
+    const result = [];
+    const stack = [...(subagentsByParent.get(rootId) ?? []), ...directWorkerChildren];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (node.status === TaskStatus.Running) {
+        result.push(node);
+      }
+      const grandchildren = subagentsByParent.get(node.id);
+      if (grandchildren) {
+        stack.push(...grandchildren);
+      }
+    }
+    return result;
+  }
+
+  // Blok dzieci jednego rodzica dostaje wlasny wrapper z odstepem 6px nad
+  // pierwszym i pod ostatnim wierszem - czyta sie jako calosc przynalezna
+  // do rodzica, nie jako ciag rownorzednych wierszy. Rekurencyjnie: kazdy
+  // subagent z wlasnymi dziecmi dostaje analogiczny wrapper na swoim
+  // poziomie.
   function appendChildrenRecursive(list, children, subagentsByParent, depth) {
-    for (const task of sortByStartedAtDesc(children)) {
-      list.appendChild(buildCard(task, depth));
+    const ordered = sortByStartedAtDesc(children);
+    if (ordered.length === 0) {
+      return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'card-children';
+    for (const task of ordered) {
+      wrapper.appendChild(buildCard(task, depth));
       // Tylko subagenci moga miec dalsze dzieci (workery sa zawsze lisciem).
       const grandchildren = subagentsByParent.get(task.id);
       if (grandchildren) {
-        appendChildrenRecursive(list, grandchildren, subagentsByParent, depth + 1);
+        appendChildrenRecursive(wrapper, grandchildren, subagentsByParent, depth + 1);
       }
     }
+    list.appendChild(wrapper);
   }
 
   function buildOverallHeader(totalCount) {
@@ -202,11 +239,20 @@
     return [...tasks].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   }
 
-  function buildCard(task, depth) {
+  function buildCard(task, depth, runningDescendants) {
+    // Potomkowie Running sa liczone WYLACZNIE dla sesji (patrz render()) -
+    // dla subagentow/workerow ten parametr zawsze przychodzi jako undefined.
+    // To jest czysto prezentacyjne nadpisanie: TaskStatus w migawce zostaje
+    // nietkniety, zmienia sie tylko to, co rysujemy.
+    const hasRunningDescendant = Boolean(runningDescendants && runningDescendants.length > 0);
+
     const card = document.createElement('div');
     card.className = 'card';
     card.dataset.id = task.id;
-    const isWaitingRow = task.status === TaskStatus.WaitingForUser;
+    // Rodzic z pracujacym potomkiem nigdy nie jest wygaszony, nawet gdy
+    // jego WLASNY status to WaitingForUser - etykieta "bezczynna"/"czeka"
+    // nie ma prawa pojawic sie nad pracujacym dzieckiem.
+    const isWaitingRow = task.status === TaskStatus.WaitingForUser && !hasRunningDescendant;
     if (isWaitingRow) {
       // Wygaszone, wracaja do pelnej widocznosci na hover/focus (patrz CSS).
       card.classList.add('card-waiting');
@@ -228,7 +274,7 @@
       content.style.paddingLeft = `${depth * NESTING_STEP_PX}px`;
     }
 
-    content.appendChild(buildLine1(task, isWaitingRow));
+    content.appendChild(buildLine1(task, isWaitingRow, hasRunningDescendant ? runningDescendants : null));
     content.appendChild(buildLine2(task));
 
     const contextBar = buildContextBar(task);
@@ -240,29 +286,38 @@
     return card;
   }
 
-  function buildLine1(task, isWaitingRow) {
+  function buildLine1(task, isWaitingRow, runningDescendants) {
     const row = document.createElement('div');
     row.className = 'card-line1';
 
-    row.appendChild(buildStatusBadge(task));
+    row.appendChild(buildStatusBadge(task, runningDescendants));
 
     const title = document.createElement('span');
     title.className = 'card-title';
+    if (task.kind === TaskKind.Session) {
+      // Jedyna roznica typograficzna miedzy rodzicem a dziecmi - reszta
+      // (rozmiar, odstepy) zostaje bez zmian.
+      title.classList.add('card-title--session');
+    }
     title.textContent = task.title;
     title.title = task.title;
     row.appendChild(title);
 
     const right = document.createElement('span');
     right.className = 'card-line1-right';
-    right.appendChild(buildTimerElement(task, isWaitingRow));
+    right.appendChild(buildTimerElement(task, isWaitingRow, runningDescendants));
     right.appendChild(buildInlineActions(task));
     row.appendChild(right);
 
     return row;
   }
 
-  function buildStatusBadge(task) {
-    const info = statusBadgeInfo(task);
+  function buildStatusBadge(task, runningDescendants) {
+    // Sesja z co najmniej jednym pracujacym potomkiem reprezentuje ZADANIE
+    // w toku, niezaleznie od tego, czy sama sesja jest Running, WaitingForUser
+    // czy Idle - grupujemy po zadaniach, wiec status wiersza rodzica ma to
+    // odzwierciedlac.
+    const info = runningDescendants ? { text: 'w toku', tone: 'green' } : statusBadgeInfo(task);
     const badge = document.createElement('span');
     badge.className = info.tone ? `status-badge status-badge--tone-${info.tone}` : 'status-badge';
     badge.textContent = info.text;
@@ -297,9 +352,19 @@
     }
   }
 
-  function buildTimerElement(task, isWaitingRow) {
+  function buildTimerElement(task, isWaitingRow, runningDescendants) {
     const timer = document.createElement('span');
     timer.className = 'card-timer';
+    if (runningDescendants) {
+      // "Jak dlugo to zadanie leci" = od startu NAJDLUZEJ dzialajacego
+      // potomka, czyli tego z NAJWCZESNIEJSZYM startedAt - nie od wieku
+      // wlasnej tury sesji. Tyka jak zwykly Running (card-timer--live).
+      const earliestStartedAt = Math.min(...runningDescendants.map((descendant) => descendant.startedAt ?? Date.now()));
+      timer.classList.add('card-timer--live');
+      timer.dataset.startedAt = earliestStartedAt;
+      timer.textContent = formatElapsed(earliestStartedAt, Date.now());
+      return timer;
+    }
     if (isWaitingRow) {
       // Zamrozony format "od X" liczony od mtime (lastActivityAt), nigdy
       // nie tyka - brak klasy card-timer--live, reguly "interwal tylko dla
