@@ -109,45 +109,87 @@ doing anything anymore.
 
 ## Requirements
 
-| Requirement | Role | Hard/soft |
-| --- | --- | --- |
-| **Node.js >= 20** (recommended: **26**) | building the extension | hard |
-| **npm** | building the extension | hard |
-| **VS Code** or **VS Code Insiders**, with the `code`/`code-insiders` CLI available — either on PATH or in the standard install location | running the panel | hard |
-| **WSL with an Ubuntu distribution** + the `muse` command in it | **Spark** workers | soft |
-| **`codex` on PATH** | **Codex** workers | soft |
+Requirements split by **level** — see [Installation](#installation) for what
+each level means.
 
-A missing soft requirement doesn't block installation — the installer warns
-and continues; the part of the panel that doesn't need the missing tool
-works normally.
+| Requirement | Needed for | Level |
+| --- | --- | --- |
+| **VS Code** or **VS Code Insiders**, version **1.96.0** or newer, with the `code`/`code-insiders` CLI available — either on PATH or in the standard install location | running the panel | always |
+| A **Claude Code** you're already using | seeing Claude Code sessions and subagents in the panel | Level 1 (Marketplace install) — nothing further to install |
+| **WSL** with an **`Ubuntu*`** distribution (`Ubuntu-22.04`, `Ubuntu-24.04`, …) + the `muse` command in it | seeing **Spark** workers | Level 2 — Spark only |
+| **`codex` on PATH** | seeing **Codex** workers | Level 2 — Codex only |
+| **Node.js >= 20** (recommended: **26**), **npm**, and **`@vscode/vsce`** (installed on demand via `npx`) | building the extension from source | Level 2, route A (installer) only |
+
+Node.js, npm and `@vscode/vsce` are **not** needed to install or run the
+extension from the Marketplace — they only matter if you build it yourself.
+A missing Spark/Codex requirement doesn't break anything else: the rest of
+the panel keeps working, that worker's rows just never appear.
 
 ---
 
 ## Installation
 
+Worker Board has two independent levels. Almost everyone only needs Level 1.
+
+### Level 1 — Claude Code sessions and subagents (Marketplace install)
+
+This is the default path and the only thing most people need.
+
+1. Install the extension:
+   - from VS Code: open **Extensions**, search for `Worker Board`, click **Install**; or
+   - from a terminal: `code --install-extension dtcode.worker-board`.
+2. `Ctrl+Shift+P` → **`Developer: Reload Window`**.
+3. Click the **Workery** icon in the activity bar.
+4. Verify: `View` → `Output` → pick the **`Worker Board`** channel — an
+   entry `Worker Board <version> uruchomiony` ("Worker Board <version>
+   started") should appear. That's the only reliable way to confirm which
+   version is actually running.
+
+**Nothing else needs installing or configuring at this level.** The panel
+reads Claude Code sessions and subagents straight from
+`~/.claude/projects`, with no wrapper script and no extra setup involved.
+The only requirements are VS Code (1.96.0+) and a Claude Code you're
+already using — **Node.js and npm are not needed here** (see
+[Requirements](#requirements)).
+
+If the panel looks empty right after installing, that's most likely
+correct, not a bug: it only ever shows tasks that are currently running or
+sessions waiting for a reply. A quiet moment with nothing in flight looks
+empty by design — see [Statuses](#statuses).
+
+### Level 2 — Spark and Codex workers (needs the wrapper)
+
+Skip this unless you actually run Spark (`muse`) or Codex workers and want
+them to show up in the panel too. In one sentence: Spark leaves no trace on
+disk, and Codex writes no completion marker, so the panel needs the state
+records that only the `worker-run.ps1` wrapper writes — see
+[CRITICAL: how to use it](#critical-how-to-use-it).
+
+There are two ways to get the wrapper and the skill in place:
+
+**A. Via the installer (recommended)**
+
 ```powershell
-git clone <this-repository-url>
+git clone https://github.com/DTCodePL/WorkerBoard.git
 cd WorkerBoard
 powershell -File install.ps1
 ```
+
+This route additionally requires **Node.js >= 20** (recommended: 26) and
+**npm**, because the installer builds the extension from source
+(`npm ci`/`npm install` → `npm run build` → `npx @vscode/vsce package`)
+before installing it — and it **replaces** the Marketplace build with your
+own build.
 
 The script runs on the Windows PowerShell 5.1 that ships with every Windows
 install — no separate PowerShell 7 setup is required. If PowerShell 7
 (`pwsh`) is installed, `pwsh -File install.ps1` works identically.
 
-The script, in order: checks requirements (see above), builds the package
-(`npm ci`/`npm install` → `npm run build` → `npx @vscode/vsce package`),
+The script, in order: checks requirements (see above), builds the package,
 installs the extension in every detected VS Code edition, and deploys two
 dependencies that live outside the repository into `~/.claude/` (see the
-[CRITICAL: how to use it](#critical-how-to-use-it) section).
-
-Once it's done:
-
-1. In VS Code: `Ctrl+Shift+P` → **`Developer: Reload Window`**.
-2. `View` → `Output` → pick the **`Worker Board`** channel.
-3. An entry `Worker Board <version> uruchomiony` ("Worker Board <version>
-   started") should appear — that's the only reliable way to confirm which
-   version is actually running.
+[CRITICAL: how to use it](#critical-how-to-use-it) section). Once it's
+done, reload the window and verify the same way as in Level 1 above.
 
 **Switches:**
 
@@ -162,6 +204,23 @@ repository and `~/.claude/` state gives the same outcome (aside from the
 repeated uninstall+install of the extension, which VS Code performs on
 every run regardless, since it can keep the old copy when the version
 number hasn't changed).
+
+**B. Manually, no cloning, no Node.js**
+
+For anyone who wants to keep the Marketplace build and add only the two
+missing pieces. Download these two files from the repository and place
+them at:
+
+- [`deploy/claude/bin/worker-run.ps1`](https://github.com/DTCodePL/WorkerBoard/blob/main/deploy/claude/bin/worker-run.ps1) → `%USERPROFILE%\.claude\bin\worker-run.ps1`
+- [`deploy/claude/skills/external-workers/SKILL.md`](https://github.com/DTCodePL/WorkerBoard/blob/main/deploy/claude/skills/external-workers/SKILL.md) → `%USERPROFILE%\.claude\skills\external-workers\SKILL.md`
+
+then create the (empty) directories `%USERPROFILE%\.claude\worker-status`
+and `%USERPROFILE%\.claude\worker-status\logs`. No Node.js, no npm, no
+`vsce` — the Marketplace build of the extension is left untouched.
+
+Either route, Spark and Codex workers still **MUST** be launched through
+the wrapper to show up in the panel — see
+[CRITICAL: how to use it](#critical-how-to-use-it).
 
 ---
 
@@ -421,44 +480,85 @@ robi.
 
 ## Wymagania
 
-| Wymaganie | Rola | Twarde/miękkie |
-| --- | --- | --- |
-| **Node.js >= 20** (zalecane: **26**) | budowa rozszerzenia | twarde |
-| **npm** | budowa rozszerzenia | twarde |
-| **VS Code** albo **VS Code Insiders**, z dostępnym CLI `code`/`code-insiders` — w PATH albo w standardowej lokalizacji instalacji | uruchomienie panelu | twarde |
-| **WSL z dystrybucją Ubuntu** + polecenie `muse` w niej | workery **Spark** | miękkie |
-| **`codex` w PATH** | workery **Codex** | miękkie |
+Wymagania podzielone na **poziomy** — co znaczy który, patrz
+[Instalacja](#instalacja).
 
-Brak miękkiego wymagania nie blokuje instalacji — instalator ostrzega i
-kontynuuje; ta część panelu, która nie wymaga brakującego narzędzia, działa
-normalnie.
+| Wymaganie | Do czego potrzebne | Poziom |
+| --- | --- | --- |
+| **VS Code** albo **VS Code Insiders**, wersja **1.96.0** lub nowsza, z dostępnym CLI `code`/`code-insiders` — w PATH albo w standardowej lokalizacji instalacji | uruchomienie panelu | zawsze |
+| Już używany **Claude Code** | zobaczenie sesji i subagentów Claude Code w panelu | Poziom 1 (instalacja ze sklepu) — nic więcej nie trzeba instalować |
+| **WSL** z dystrybucją **`Ubuntu*`** (`Ubuntu-22.04`, `Ubuntu-24.04`, …) + polecenie `muse` w niej | zobaczenie workerów **Spark** | Poziom 2 — tylko Spark |
+| **`codex` w PATH** | zobaczenie workerów **Codex** | Poziom 2 — tylko Codex |
+| **Node.js >= 20** (zalecane: **26**), **npm** oraz **`@vscode/vsce`** (instalowany na żądanie przez `npx`) | budowa rozszerzenia ze źródeł | Poziom 2, droga A (instalator) |
+
+Node.js, npm i `@vscode/vsce` **nie** są potrzebne do instalacji ani
+uruchomienia rozszerzenia ze sklepu — liczą się wyłącznie przy budowie
+własnej. Brak wymagania dla Sparka/Codexa niczego innego nie psuje: reszta
+panelu działa normalnie, po prostu wiersze tego workera się nie pojawią.
 
 ---
 
 ## Instalacja
 
+Worker Board ma dwa niezależne poziomy. Prawie każdemu wystarczy Poziom 1.
+
+### Poziom 1 — sesje i subagenci Claude Code (instalacja ze sklepu)
+
+To jest ścieżka domyślna i jedyna, jakiej potrzebuje większość osób.
+
+1. Zainstaluj rozszerzenie:
+   - z VS Code: otwórz **Extensions**, wyszukaj `Worker Board`, kliknij **Install**; albo
+   - z terminala: `code --install-extension dtcode.worker-board`.
+2. `Ctrl+Shift+P` → **`Developer: Reload Window`**.
+3. Kliknij ikonę **Workery** w pasku aktywności.
+4. Sprawdź: `View` → `Output` → wybierz kanał **`Worker Board`** — powinien
+   pojawić się wpis `Worker Board <wersja> uruchomiony`. To jedyny pewny
+   sposób na potwierdzenie, która wersja faktycznie działa.
+
+**Na tym poziomie nie trzeba niczego więcej instalować ani konfigurować.**
+Panel czyta sesje i subagentów Claude Code wprost z `~/.claude/projects`,
+bez żadnego wrappera i bez dodatkowej konfiguracji. Jedyne wymagania to VS
+Code (1.96.0+) i już używany Claude Code — **Node.js i npm nie są tu
+potrzebne** (patrz [Wymagania](#wymagania)).
+
+Jeśli panel wygląda na pusty zaraz po instalacji, to najprawdopodobniej
+poprawny stan, a nie błąd: panel z założenia pokazuje wyłącznie zadania
+trwające w tej chwili oraz sesje czekające na odpowiedź. Spokojny moment
+bez niczego w toku wygląda pusto z definicji — patrz [Statusy](#statusy).
+
+### Poziom 2 — workery Spark i Codex (wymaga wrappera)
+
+Pomiń ten poziom, jeśli nie uruchamiasz workerów Spark (`muse`) ani Codex i
+nie zależy Ci na ich widoczności w panelu. W jednym zdaniu: Spark nie
+zostawia żadnego śladu na dysku, a Codex nie zapisuje znacznika
+zakończenia, więc panel potrzebuje rekordów stanu, które zapisuje wyłącznie
+wrapper `worker-run.ps1` — patrz [KRYTYCZNE: jak używać](#krytyczne-jak-używać).
+
+Są dwie drogi, żeby mieć wrapper i skill na miejscu:
+
+**A. Instalatorem (zalecana)**
+
 ```powershell
-git clone <adres-tego-repozytorium>
+git clone https://github.com/DTCodePL/WorkerBoard.git
 cd WorkerBoard
 powershell -File install.ps1
 ```
 
-Skrypt działa na Windows PowerShell 5.1, który jest częścią każdej instalacji
-Windows — nie trzeba osobno instalować PowerShell 7. Jeśli PowerShell 7
-(`pwsh`) jest zainstalowany, `pwsh -File install.ps1` działa identycznie.
+Ta droga wymaga dodatkowo **Node.js >= 20** (zalecane: 26) oraz **npm**,
+bo instalator buduje rozszerzenie ze źródeł (`npm ci`/`npm install` →
+`npm run build` → `npx @vscode/vsce package`), zanim je zainstaluje — i
+**nadpisuje** zainstalowaną ze sklepu wersję własną budową.
 
-Skrypt kolejno: sprawdza wymagania (patrz wyżej), buduje pakiet (`npm ci`/
-`npm install` → `npm run build` → `npx @vscode/vsce package`), instaluje
+Skrypt działa na Windows PowerShell 5.1, który jest częścią każdej
+instalacji Windows — nie trzeba osobno instalować PowerShell 7. Jeśli
+PowerShell 7 (`pwsh`) jest zainstalowany, `pwsh -File install.ps1` działa
+identycznie.
+
+Skrypt kolejno: sprawdza wymagania (patrz wyżej), buduje pakiet, instaluje
 rozszerzenie we wszystkich wykrytych edycjach VS Code i wdraża dwie
 zależności żyjące poza repozytorium do `~/.claude/` (patrz sekcja
-[KRYTYCZNE: jak używać](#krytyczne-jak-używać)).
-
-Po zakończeniu:
-
-1. W VS Code: `Ctrl+Shift+P` → **`Developer: Reload Window`**.
-2. `View` → `Output` → wybierz kanał **`Worker Board`**.
-3. Powinien pojawić się wpis `Worker Board <wersja> uruchomiony` — to jedyny
-   pewny sposób na potwierdzenie, która wersja faktycznie działa.
+[KRYTYCZNE: jak używać](#krytyczne-jak-używać)). Po zakończeniu przeładuj
+okno i sprawdź tak samo jak w Poziomie 1 powyżej.
 
 **Przełączniki:**
 
@@ -473,6 +573,22 @@ stanem repozytorium i `~/.claude/` daje ten sam wynik (poza ponownym
 uninstall+install rozszerzenia, które VS Code i tak wykonuje przy każdym
 przebiegu, bo potrafi zachować starą kopię przy niezmienionym numerze
 wersji).
+
+**B. Ręcznie, bez klonowania i bez Node.js**
+
+Dla kogoś, kto chce zostać przy wersji ze sklepu i dołożyć tylko brakujące
+dwa elementy. Pobierz z repozytorium te dwa pliki i umieść je w:
+
+- [`deploy/claude/bin/worker-run.ps1`](https://github.com/DTCodePL/WorkerBoard/blob/main/deploy/claude/bin/worker-run.ps1) → `%USERPROFILE%\.claude\bin\worker-run.ps1`
+- [`deploy/claude/skills/external-workers/SKILL.md`](https://github.com/DTCodePL/WorkerBoard/blob/main/deploy/claude/skills/external-workers/SKILL.md) → `%USERPROFILE%\.claude\skills\external-workers\SKILL.md`
+
+a następnie utwórz (puste) katalogi `%USERPROFILE%\.claude\worker-status`
+i `%USERPROFILE%\.claude\worker-status\logs`. Bez Node.js, bez npm, bez
+`vsce` — wersja rozszerzenia ze sklepu zostaje nietknięta.
+
+Niezależnie od drogi, workery Spark i Codex nadal **MUSZĄ** być uruchamiane
+przez wrapper, żeby pojawić się w panelu — patrz
+[KRYTYCZNE: jak używać](#krytyczne-jak-używać).
 
 ---
 

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 Wszystkie istotne zmiany w Worker Board są opisane poniżej — najpierw po angielsku,
 pod każdą wersją po polsku.
 
+## [0.7.1] - 2026-09-06
+
+### Changed
+
+- The `Requirements`/`Installation` sections now split into the two levels
+  the extension actually has: Level 1 (Marketplace install, `code
+  --install-extension dtcode.worker-board`) needs only VS Code and shows
+  Claude Code sessions/subagents with zero further setup; Level 2 (Spark
+  and Codex workers) needs the `worker-run.ps1` wrapper, and is now
+  documented with two ways to get it — the source-build installer, or a
+  manual two-file copy that keeps the Marketplace build and needs no
+  Node.js. Node.js/npm/`@vscode/vsce` are now labelled as build-from-source
+  only, no longer implied as required to install or run the extension.
+  The literal `git clone <this-repository-url>` placeholder was replaced
+  with the real repository URL.
+
+**Zmienione** — sekcje `Wymagania`/`Instalacja` dzielą się teraz na dwa
+realnie istniejące poziomy: Poziom 1 (instalacja ze sklepu, `code
+--install-extension dtcode.worker-board`) potrzebuje tylko VS Code i od
+razu pokazuje sesje/subagentów Claude Code bez żadnej dodatkowej
+konfiguracji; Poziom 2 (workery Spark i Codex) wymaga wrappera
+`worker-run.ps1` i jest teraz opisany dwiema drogami — instalatorem
+budującym ze źródeł albo ręcznym skopiowaniem dwóch plików, które
+zachowuje wersję ze sklepu i nie wymaga Node.js. Node.js/npm/`@vscode/vsce`
+są teraz oznaczone jako potrzebne wyłącznie do budowy ze źródeł, a nie
+sugerowane jako wymagane do instalacji czy uruchomienia rozszerzenia.
+Zastąpiono też literalny placeholder `git clone <adres-tego-repozytorium>`
+prawdziwym adresem repozytorium.
+
 ## [0.7.0] - 2026-09-06
 
 ### Fixed
