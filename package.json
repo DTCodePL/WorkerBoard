@@ -1,0 +1,130 @@
+{
+  "name": "worker-board",
+  "displayName": "Worker Board",
+  "description": "Panel w pasku bocznym VS Code pokazujacy zadania Claude Code, Sparka i Codexa.",
+  "version": "0.4.1",
+  "publisher": "dtcode",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "workerBoard",
+          "title": "Workery",
+          "icon": "media/board.svg"
+        }
+      ]
+    },
+    "views": {
+      "workerBoard": [
+        {
+          "id": "workerBoard.cards",
+          "name": "Zadania",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "workerBoard.refresh",
+        "title": "Workery: Odśwież",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "workerBoard.clearFinished",
+        "title": "Workery: Usuń zakończone rekordy",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "workerBoard.openStatusFolder",
+        "title": "Workery: Otwórz katalog stanu"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "workerBoard.refresh",
+          "when": "view == workerBoard.cards",
+          "group": "navigation"
+        },
+        {
+          "command": "workerBoard.clearFinished",
+          "when": "view == workerBoard.cards",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Worker Board",
+      "properties": {
+        "workerBoard.pollIntervalMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "description": "Odstęp między pełnymi odświeżeniami w milisekundach."
+        },
+        "workerBoard.claudeLookbackHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "description": "Ile godzin wstecz brać pod uwagę sesje Claude Code przy skanowaniu."
+        },
+        "workerBoard.subagentStaleAfterMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "Po ilu minutach bez zapisu do transkryptu subagent bez sygnału ukończenia jest uznawany za porzucony."
+        },
+        "workerBoard.contextWindowTokens": {
+          "type": "number",
+          "default": 1000000,
+          "minimum": 1000,
+          "description": "Rozmiar okna kontekstu używany jako mianownik paska wypełnienia. Transkrypt Claude Code nie zawiera tej wartości, więc trzeba ją podać."
+        },
+        "workerBoard.waitingLookbackMinutes": {
+          "type": "number",
+          "default": 120,
+          "minimum": 1,
+          "description": "Jak długo po ostatniej aktywności sesja czekająca na odpowiedź pozostaje widoczna w panelu."
+        },
+        "workerBoard.claudeProjectsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ścieżka do katalogu ~/.claude/projects. Puste = wartość domyślna."
+        },
+        "workerBoard.workerStatusPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ścieżka do katalogu ~/.claude/worker-status. Puste = wartość domyślna."
+        },
+        "workerBoard.codexSessionsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ścieżka do katalogu ~/.codex/sessions. Puste = wartość domyślna."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2",
+    "esbuild": "^0.28.2",
+    "@vscode/vsce": "^3.9.2"
+  }
+}

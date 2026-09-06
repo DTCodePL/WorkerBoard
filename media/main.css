@@ -1,0 +1,290 @@
+/* Style panelu Workery. Wylacznie zmienne motywu VS Code - zero
+   zahardkodowanych kolorow, dziala jednakowo w motywie jasnym i ciemnym. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+}
+
+/* Gdy panel jest pusty (stan domyslny - nic nie jest w toku), stan pusty
+   ma wypelnic cala wysokosc i wyśrodkowac swoja tresc. Gdy panel ma sekcje,
+   #root zachowuje sie jak zwykly kontener blokowy - sekcje ukladaja sie
+   od gory, bez wplywu tej reguly. */
+#root {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.section {
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+.section:first-child {
+  margin-top: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.section-count {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--vscode-descriptionForeground);
+}
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  /* Brak gap - separator (border-bottom na .card) robi robote. */
+}
+
+/* Wiersz, nie pudelko: zero obrysu i tla poza :hover/:focus-within.
+   Separator miedzy wierszami to border-bottom, nie brzeg karty. Jeden
+   akcent chromatyczny na caly wiersz - tylko plakietka statusu (patrz
+   .status-badge--tone-*) niesie kolor; wszystko inne jest monochromem. */
+.card {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.card:last-child {
+  border-bottom: none;
+}
+
+/* Hover/focus rozciaga tlo na pelna szerokosc panelu (ujemny margines
+   rowny paddingowi #root/body) - padding rosnie o tyle samo, zeby tekst
+   NIE przeskoczyl w bok, kiedy tlo sie pojawia. */
+.card:hover,
+.card:focus-within {
+  margin: 0 -8px;
+  padding: 3px 16px;
+  background: var(--vscode-list-hoverBackground);
+}
+
+.card-content {
+  /* Jedna wspolna wartosc dla obu linii - liczba wysokosci wiersza ma byc
+     przewidywalna, nie zalezna od domyslnego line-height przegladarki. */
+  line-height: 1.25;
+}
+
+.card-content > * + * {
+  margin-top: 1px;
+}
+
+/* Wciecie zagniezdzonych subagentow: lewy padding NA WEWNETRZNYM
+   wrapperze (nie na .card, ktory manipuluje marginesem/paddingiem przy
+   hover-bleed powyzej - inline style na tym samym elemencie kolidowalby z
+   ta regula, bo inline zawsze wygrywa nad selektorem :hover). Linia
+   prowadzaca w kolorze obramowan, tylko dla zagniezdzonych.
+   Uwaga: linia prowadzaca stoi w stalej pozycji (nie przesuwa sie per
+   poziom glebokosci) - glebokosc widac po wcieciu tekstu, nie po pozycji
+   linii. To swiadome uproszczenie, zeby uniknac kolizji z hover-bleed. */
+.card-nested .card-content {
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+/* Sesje czekajace na uzytkownika: wygaszone, wracaja do pelnej widocznosci
+   na hover/focus. Bez koloru akcentu na plakietce statusu (patrz JS). */
+.card-waiting {
+  opacity: 0.72;
+}
+
+.card-waiting:hover,
+.card-waiting:focus-within {
+  opacity: 1;
+}
+
+/* Wiersz 1: plakietka statusu + tytul (jedna linia, elipsa) + slot
+   licznika/akcji dosuniety do prawej. */
+.card-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  letter-spacing: 0;
+}
+
+/* Licznik i akcje dziela to samo miejsce (ta sama komorka gridu), zeby
+   odslonienie akcji na hover/focus nie przesuwalo reszty wiersza - akcje
+   ZASTEPUJA licznik przez zmiane opacity, szerokosc komorki jest stala od
+   pierwszego renderu. */
+.card-line1-right {
+  display: grid;
+  grid-template-areas: 'slot';
+  align-items: center;
+  flex: none;
+}
+
+.card-timer,
+.card-actions-inline {
+  grid-area: slot;
+}
+
+.card-timer {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.1s;
+}
+
+.card-actions-inline {
+  display: flex;
+  gap: 2px;
+  justify-self: end;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.card:hover .card-timer,
+.card:focus-within .card-timer {
+  opacity: 0;
+}
+
+.card:hover .card-actions-inline,
+.card:focus-within .card-actions-inline {
+  opacity: 1;
+}
+
+.icon-btn {
+  border: none;
+  border-radius: 2px;
+  padding: 1px 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.icon-btn:hover {
+  opacity: 0.85;
+}
+
+/* Plakietka statusu - JEDYNY kolorowy element na wierszu. Kanciasta,
+   "narzedziowa", nie pigulka. */
+.status-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  white-space: nowrap;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.status-badge--tone-green {
+  background: var(--vscode-charts-green);
+  color: var(--vscode-editor-background);
+}
+
+.status-badge--tone-red {
+  background: var(--vscode-charts-red);
+  color: var(--vscode-editor-background);
+}
+
+.status-badge--tone-yellow {
+  background: var(--vscode-charts-yellow);
+  color: var(--vscode-editor-background);
+}
+
+/* Wiersz 2: agentType/model/effort/meta jako zwykly tekst (zero plakietek
+   z tlem), jeden stopien hierarchii - agentType+model w foreground, reszta
+   w descriptionForeground. Jedna linia bez zawijania, elipsa na koncu. */
+.card-line2 {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.card-line2-primary {
+  color: var(--vscode-foreground);
+}
+
+.card-line2-secondary {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Pasek kontekstu: wyrownany do kolumny tekstu (zero ujemnych marginesow -
+   dziedziczy padding-left wciecia z .card-content), tor przezroczysty
+   (nie rysujemy go wcale). Kolor wypelnienia to SYGNAL: neutralny ponizej
+   80%, zolty od 80%, czerwony od 95% - nigdy dekoracyjny niebieski. */
+.card-context-bar-track {
+  display: block;
+  height: 2px;
+  background: transparent;
+}
+
+.card-context-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--vscode-descriptionForeground);
+}
+
+.card-context-bar-fill--warning {
+  background: var(--vscode-charts-yellow);
+}
+
+.card-context-bar-fill--danger {
+  background: var(--vscode-charts-red);
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.empty-state-title {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.empty-state-hint {
+  margin-top: 6px;
+  max-width: 32em;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
