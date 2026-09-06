@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 <#
 .SYNOPSIS
     Instalator Worker Board - buduje rozszerzenie VS Code z tego repozytorium,
@@ -132,17 +132,50 @@ try {
     }
 
     # --- CLI VS Code: co najmniej jedno z code / code-insiders (twarde) ---
-    $codeCmd = Get-Command code -ErrorAction SilentlyContinue
-    $codeInsidersCmd = Get-Command code-insiders -ErrorAction SilentlyContinue
-    $vsCodeEditionNames = [System.Collections.Generic.List[string]]::new()
-    if ($codeCmd) { $vsCodeEditionNames.Add('code') }
-    if ($codeInsidersCmd) { $vsCodeEditionNames.Add('code-insiders') }
-    $hasAnyVsCode = $vsCodeEditionNames.Count -gt 0
+    # Instalator Windows dla VS Code nie dodaje CLI do PATH domyslnie (to opcja
+    # wybierana przy instalacji), wiec brak w PATH nie oznacza braku edytora -
+    # sprawdzamy tez znane lokalizacje instalacji, zanim uznamy wymaganie za
+    # niespelnione.
+    function Find-VsCodeCli {
+        param([string]$CommandName, [string[]]$KnownPaths)
+
+        $cmd = Get-Command $CommandName -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return [pscustomobject]@{ Path = $cmd.Source; Zrodlo = 'PATH' }
+        }
+
+        foreach ($p in $KnownPaths) {
+            if ($p -and (Test-Path -LiteralPath $p)) {
+                return [pscustomobject]@{ Path = $p; Zrodlo = 'znana lokalizacja instalacji' }
+            }
+        }
+
+        return $null
+    }
+
+    $codeKnownPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
+        (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft VS Code\bin\code.cmd')
+    )
+    $codeInsidersKnownPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd'),
+        (Join-Path $env:ProgramFiles 'Microsoft VS Code Insiders\bin\code-insiders.cmd'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft VS Code Insiders\bin\code-insiders.cmd')
+    )
+
+    $codeInfo = Find-VsCodeCli -CommandName 'code' -KnownPaths $codeKnownPaths
+    $codeInsidersInfo = Find-VsCodeCli -CommandName 'code-insiders' -KnownPaths $codeInsidersKnownPaths
+
+    $vsCodeEditionDetails = [System.Collections.Generic.List[string]]::new()
+    if ($codeInfo) { $vsCodeEditionDetails.Add("code ($($codeInfo.Zrodlo): $($codeInfo.Path))") }
+    if ($codeInsidersInfo) { $vsCodeEditionDetails.Add("code-insiders ($($codeInsidersInfo.Zrodlo): $($codeInsidersInfo.Path))") }
+    $hasAnyVsCode = ($null -ne $codeInfo) -or ($null -ne $codeInsidersInfo)
     Add-Requirement 'CLI VS Code (code lub code-insiders)' 'Twarde' $hasAnyVsCode $(
-        if ($hasAnyVsCode) { "znaleziono: $($vsCodeEditionNames -join ', ')" } else { 'nie znaleziono zadnego' }
+        if ($hasAnyVsCode) { "znaleziono: $($vsCodeEditionDetails -join '; ')" } else { 'nie znaleziono zadnego' }
     )
     if (-not $hasAnyVsCode) {
-        $hardMissing.Add("Brak CLI 'code' i 'code-insiders' w PATH - nie da sie zainstalowac rozszerzenia.")
+        $hardMissing.Add("Brak CLI 'code' i 'code-insiders' - nie znaleziono ani w PATH, ani w standardowych lokalizacjach instalacji VS Code. Doinstaluj CLI: w VS Code uruchom ponownie instalator i zaznacz opcje 'Add to PATH', albo w palecie polecen wykonaj 'Shell Command: Install code command in PATH'. Mozna tez wskazac katalog binarny VS Code recznie, dodajac go do zmiennej PATH.")
     }
 
     # --- WSL Ubuntu + muse, potrzebne tylko dla Sparka (miekkie) ---
@@ -157,23 +190,26 @@ try {
         catch {
             $distros = @()
         }
-        if ($distros -contains 'Ubuntu') {
+        # Dopasowanie prefiksowe: dystrybucje ze sklepu instaluja sie dzis jako
+        # 'Ubuntu-22.04' / 'Ubuntu-24.04', a nie jako gola nazwa 'Ubuntu'.
+        $matchedDistro = $distros | Where-Object { $_ -like 'Ubuntu*' } | Select-Object -First 1
+        if ($matchedDistro) {
             try {
-                $museCheck = (wsl.exe -d Ubuntu -- bash -lc 'command -v muse' 2>$null)
+                $museCheck = (wsl.exe -d $matchedDistro -- bash -lc 'command -v muse' 2>$null)
                 if ($LASTEXITCODE -eq 0 -and $museCheck) {
                     $museFound = $true
-                    $museDetail = "znaleziono: $($museCheck.Trim())"
+                    $museDetail = "znaleziono w '$matchedDistro': $($museCheck.Trim())"
                 }
                 else {
-                    $museDetail = "WSL Ubuntu jest, ale brak polecenia 'muse' w niej"
+                    $museDetail = "dystrybucja WSL '$matchedDistro' jest, ale brak polecenia 'muse' w niej"
                 }
             }
             catch {
-                $museDetail = "nie udalo sie sprawdzic polecenia 'muse' w WSL Ubuntu"
+                $museDetail = "nie udalo sie sprawdzic polecenia 'muse' w WSL '$matchedDistro'"
             }
         }
         else {
-            $museDetail = "brak dystrybucji WSL 'Ubuntu' (dostepne: $(if ($distros.Count -gt 0) { $distros -join ', ' } else { 'brak' }))"
+            $museDetail = "brak dystrybucji WSL zaczynajacej sie od 'Ubuntu' (dostepne: $(if ($distros.Count -gt 0) { $distros -join ', ' } else { 'brak' }))"
         }
     }
     else {
@@ -273,21 +309,30 @@ try {
     Write-Section 'C. Instalacja rozszerzenia'
 
     $editions = [System.Collections.Generic.List[object]]::new()
-    if ($codeCmd) { $editions.Add([pscustomobject]@{ Cli = 'code'; Label = 'VS Code' }) }
-    if ($codeInsidersCmd) { $editions.Add([pscustomobject]@{ Cli = 'code-insiders'; Label = 'VS Code Insiders' }) }
+    if ($codeInfo) { $editions.Add([pscustomobject]@{ Cli = $codeInfo.Path; Label = 'VS Code' }) }
+    if ($codeInsidersInfo) { $editions.Add([pscustomobject]@{ Cli = $codeInsidersInfo.Path; Label = 'VS Code Insiders' }) }
 
     $installedEditions = [System.Collections.Generic.List[string]]::new()
 
     foreach ($ed in $editions) {
         if ($DryRun) {
-            Write-Planned "$($ed.Label): $($ed.Cli) --uninstall-extension $ExtensionId (blad ignorowany, gdy nie bylo zainstalowane)"
+            Write-Planned "$($ed.Label): $($ed.Cli) --uninstall-extension $ExtensionId (brak zainstalowanej wersji jest sytuacja normalna, kazdy inny blad zostanie wypisany jako ostrzezenie)"
             Write-Planned "$($ed.Label): $($ed.Cli) --install-extension `"$vsixPath`" --force"
             $installedEditions.Add($ed.Label)
             continue
         }
 
         Write-Step "$($ed.Label): odinstalowanie poprzedniej wersji (jesli byla)"
-        & $ed.Cli --uninstall-extension $ExtensionId *> $null
+        $uninstallOutput = & $ed.Cli --uninstall-extension $ExtensionId 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $uninstallText = ($uninstallOutput | Out-String)
+            # Brak zainstalowanego rozszerzenia to sytuacja normalna i cicha.
+            # Kazdy inny blad ma trafic do wyjscia jako ostrzezenie, bez przerywania instalacji.
+            if ($uninstallText -notmatch 'is not installed') {
+                Write-Host "OSTRZEZENIE: $($ed.Label): odinstalowanie poprzedniej wersji zakonczylo sie kodem $LASTEXITCODE :" -ForegroundColor Yellow
+                Write-Host $uninstallText -ForegroundColor Yellow
+            }
+        }
 
         Write-Step "$($ed.Label): instalacja $(Split-Path -Leaf $vsixPath)"
         & $ed.Cli --install-extension $vsixPath --force
@@ -365,8 +410,11 @@ try {
             continue
         }
 
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $backupPath = "$dst.backup-$timestamp"
+        # Rozdzielczosc sekundowa + zapis z -Force potrafily nadpisac pierwsza
+        # kopie zapasowa przy dwoch przebiegach w tej samej sekundzie - milisekundy
+        # i PID procesu czynia sufiks praktycznie unikalnym.
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+        $backupPath = "$dst.backup-$timestamp-pid$PID"
 
         if ($DryRun) {
             Write-Planned "$label : plik docelowy rozni sie od repozytorium -> kopia zapasowa $backupPath, potem nadpisanie wersja z repo"

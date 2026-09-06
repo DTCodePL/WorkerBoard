@@ -113,7 +113,7 @@ doing anything anymore.
 | --- | --- | --- |
 | **Node.js >= 20** (recommended: **26**) | building the extension | hard |
 | **npm** | building the extension | hard |
-| **VS Code** or **VS Code Insiders** (`code`/`code-insiders` CLI on PATH) | running the panel | hard |
+| **VS Code** or **VS Code Insiders**, with the `code`/`code-insiders` CLI available — either on PATH or in the standard install location | running the panel | hard |
 | **WSL with an Ubuntu distribution** + the `muse` command in it | **Spark** workers | soft |
 | **`codex` on PATH** | **Codex** workers | soft |
 
@@ -128,8 +128,12 @@ works normally.
 ```powershell
 git clone <this-repository-url>
 cd WorkerBoard
-pwsh -File install.ps1
+powershell -File install.ps1
 ```
+
+The script runs on the Windows PowerShell 5.1 that ships with every Windows
+install — no separate PowerShell 7 setup is required. If PowerShell 7
+(`pwsh`) is installed, `pwsh -File install.ps1` works identically.
 
 The script, in order: checks requirements (see above), builds the package
 (`npm ci`/`npm install` → `npm run build` → `npx @vscode/vsce package`),
@@ -300,7 +304,7 @@ WorkerBoard/
 ├── package.json                 # extension manifest (contributes, configuration, scripts)
 ├── esbuild.mjs                  # builds the extension into dist/extension.js
 ├── src/                         # extension code (scanners, model, view)
-├── media/                       # panel webview (main.js, main.css)
+├── media/                       # panel webview (main.js, main.css, board.svg activity-bar icon, icon.png Marketplace icon)
 ├── scripts/                     # helper scripts (incl. the smoke test)
 ├── deploy/
 │   └── claude/                  # source of truth for out-of-repo dependencies
@@ -421,7 +425,7 @@ robi.
 | --- | --- | --- |
 | **Node.js >= 20** (zalecane: **26**) | budowa rozszerzenia | twarde |
 | **npm** | budowa rozszerzenia | twarde |
-| **VS Code** albo **VS Code Insiders** (CLI `code`/`code-insiders` w PATH) | uruchomienie panelu | twarde |
+| **VS Code** albo **VS Code Insiders**, z dostępnym CLI `code`/`code-insiders` — w PATH albo w standardowej lokalizacji instalacji | uruchomienie panelu | twarde |
 | **WSL z dystrybucją Ubuntu** + polecenie `muse` w niej | workery **Spark** | miękkie |
 | **`codex` w PATH** | workery **Codex** | miękkie |
 
@@ -436,8 +440,12 @@ normalnie.
 ```powershell
 git clone <adres-tego-repozytorium>
 cd WorkerBoard
-pwsh -File install.ps1
+powershell -File install.ps1
 ```
+
+Skrypt działa na Windows PowerShell 5.1, który jest częścią każdej instalacji
+Windows — nie trzeba osobno instalować PowerShell 7. Jeśli PowerShell 7
+(`pwsh`) jest zainstalowany, `pwsh -File install.ps1` działa identycznie.
 
 Skrypt kolejno: sprawdza wymagania (patrz wyżej), buduje pakiet (`npm ci`/
 `npm install` → `npm run build` → `npx @vscode/vsce package`), instaluje
@@ -601,7 +609,7 @@ WorkerBoard/
 ├── package.json                 # manifest rozszerzenia (contributes, konfiguracja, skrypty)
 ├── esbuild.mjs                  # build rozszerzenia do dist/extension.js
 ├── src/                         # kod rozszerzenia (skanery, model, widok)
-├── media/                       # webview panelu (main.js, main.css)
+├── media/                       # webview panelu (main.js, main.css, board.svg ikona paska aktywności, icon.png ikona Marketplace)
 ├── scripts/                     # skrypty pomocnicze (m.in. smoke test)
 ├── deploy/
 │   └── claude/                  # zrodlo prawdy dla zaleznosci poza repo

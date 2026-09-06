@@ -5,12 +5,10 @@ w Visual Studio Marketplace tak, żeby dała się wykonać bez szukania
 czegokolwiek w sieci. Rozszerzenie jest bezpłatne — publikacja niczego nie
 kosztuje ani wydawcy, ani użytkowników.
 
-**Stan na dziś:** wydawca `dtcode` już istnieje, a właściciel dysponuje
-ważnym tokenem PAT z odpowiednim zakresem (zweryfikowanym poleceniem
-`verify-pat` — patrz sekcja 2). Publikacja jest więc w pełni wykonalna z
-wiersza poleceń, bez żadnego ręcznego kroku w przeglądarce. Sekcje 1 i 2
-opisują mimo to procedurę **od zera** — potrzebną tylko, gdyby trzeba było
-założyć nowego wydawcę albo odtworzyć dostęp po utracie tokenu.
+**Stan na dziś:** wydawca `dtcode` już istnieje (patrz sekcja 1) — nie trzeba
+go zakładać ponownie. Sekcje 1 i 2 opisują mimo to procedurę **od zera** —
+przydatną, gdyby trzeba było założyć nowego wydawcę albo odtworzyć dostęp po
+utracie tokenu.
 
 ## 1. Warunek wstępny: publisher
 
@@ -39,14 +37,10 @@ manifeście, nie pod tym, którym się zalogowano.
 
 ## 2. Token dostępu (PAT)
 
-**Stan faktyczny:** właściciel ma już PAT z zakresem `Marketplace → Manage`
-(ten sam token jest używany także przez integrację Azure DevOps do innych
-celów) — nie trzeba go zakładać ponownie. Miejsce jego przechowywania
-(konfiguracja MCP) nie jest tu opisywane celowo.
-
-**Zanim użyjesz istniejącego tokenu do publikacji, sprawdź, że ma właściwy
-zakres** — token do innych integracji (np. work items) niekoniecznie ma
-uprawnienie do Marketplace:
+Publikacja wymaga Personal Access Tokenu (PAT) z zakresem `Marketplace →
+Manage`. Token używany do innych integracji (np. work items w Azure DevOps)
+niekoniecznie ma to uprawnienie — **zanim użyjesz jakiegokolwiek już
+posiadanego tokenu do publikacji, sprawdź, że ma właściwy zakres**:
 
 ```powershell
 npx @vscode/vsce verify-pat dtcode -p <TOKEN>
@@ -95,16 +89,16 @@ Publikacja z gotowego, już zbudowanego pakietu `.vsix` (np. tego
 wyprodukowanego przez `install.ps1`), zamiast budowania od nowa:
 
 ```powershell
-npx @vscode/vsce publish --packagePath worker-board-0.5.1.vsix
+npx @vscode/vsce publish --packagePath worker-board-0.7.0.vsix
 ```
 
 Podbicie wersji przy okazji publikacji (aktualizuje `version` w
 `package.json`, tworzy commit i tag gita, a następnie publikuje):
 
 ```powershell
-npx @vscode/vsce publish patch   # 0.5.1 -> 0.5.2
-npx @vscode/vsce publish minor   # 0.5.1 -> 0.6.0
-npx @vscode/vsce publish major   # 0.5.1 -> 1.0.0
+npx @vscode/vsce publish patch   # 0.7.0 -> 0.7.1
+npx @vscode/vsce publish minor   # 0.7.0 -> 0.8.0
+npx @vscode/vsce publish major   # 0.7.0 -> 1.0.0
 ```
 
 ## 4. Weryfikacja wydawcy (opcjonalna)
@@ -150,15 +144,15 @@ Publikacja tam jest **opcjonalna** i całkowicie niezależna od kroków 1–5.
 
 ## 7. Czego nie da się zautomatyzować
 
-Przy istniejącym wydawcy i ważnym tokenie **cała publikacja jest wykonalna
-z wiersza poleceń** (sekcja 3) — nie wymaga żadnej przeglądarki. Ręcznego
-logowania w przeglądarce wymagają wyłącznie:
+Gdy wydawca już istnieje i dysponuje się tokenem PAT z właściwym zakresem,
+**cała publikacja jest wykonalna z wiersza poleceń** (sekcja 3) — nie wymaga
+żadnej przeglądarki. Ręcznego logowania w przeglądarce wymagają wyłącznie:
 
 - **Pierwsze założenie wydawcy** (sekcja 1) — jednorazowe, przez konto
   Microsoft/Entra ID na `marketplace.visualstudio.com/manage`.
 - **Weryfikacja domeny** (sekcja 4) — opcjonalna, wymaga dodania rekordu TXT
   w panelu DNS i potwierdzenia na stronie zarządzania wydawcą.
 
-Żadnego z tych dwóch kroków nie da się wykonać skryptem — obu dotyczy dziś
-sytuacja „już zrobione” (patrz stan faktyczny w sekcjach 1–2), więc nie
-stoją one na drodze do kolejnych publikacji.
+Żadnego z tych dwóch kroków nie da się wykonać skryptem. Zakładanie wydawcy
+to jednorazowa czynność w interfejsie Marketplace (sekcja 1); weryfikacja
+domeny jest opcjonalna i nie blokuje kolejnych publikacji.

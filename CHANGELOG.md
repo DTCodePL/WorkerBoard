@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 Wszystkie istotne zmiany w Worker Board są opisane poniżej — najpierw po angielsku,
 pod każdą wersją po polsku.
 
+## [0.7.0] - 2026-09-06
+
+### Fixed
+
+- `install.ps1` now runs on the Windows PowerShell 5.1 that ships with every
+  Windows install — no syntax in the script actually required PowerShell 7,
+  so the version floor was lowered instead of adding a wrapper.
+- The VS Code CLI check no longer fails when `code`/`code-insiders` is
+  installed but not added to PATH (not the default on the Windows
+  installer): the installer now also looks in the standard per-user and
+  per-machine install locations before reporting the requirement as missing,
+  and uses the resolved path for the later install/uninstall calls.
+- The WSL/Spark check now matches any `Ubuntu*` distribution (e.g.
+  `Ubuntu-22.04`, `Ubuntu-24.04`), not only a distribution named exactly
+  `Ubuntu`, and reports the matched name.
+- The wrapper/skill backup filename now includes milliseconds and the
+  process ID, so two installer runs within the same second no longer
+  overwrite each other's backup.
+- `--uninstall-extension` no longer silently swallows every error: "not
+  installed" stays silent (expected on a first install), anything else is
+  printed as a warning without aborting the installation.
+- The "remove finished records" confirmation now states what it actually
+  removes: finished **and interrupted** worker records, the latter being
+  records left as running by a process that is no longer alive.
+
+**Naprawione** — `install.ps1` działa teraz na Windows PowerShell 5.1 (nic w
+skrypcie nie wymagało realnie PowerShell 7, więc obniżono próg wersji);
+wykrywanie CLI VS Code sprawdza też standardowe lokalizacje instalacji, gdy
+`code`/`code-insiders` nie jest w PATH; dopasowanie dystrybucji WSL działa
+prefiksowo (`Ubuntu*`), nie tylko dla nazwy dokładnie `Ubuntu`; nazwa kopii
+zapasowej ma teraz milisekundy i PID, więc dwa przebiegi w tej samej sekundzie
+nie nadpisują się nawzajem; błędy `--uninstall-extension` inne niż "brak
+zainstalowanej wersji" są wypisywane jako ostrzeżenie zamiast być cicho
+połykane.
+
 ## [0.6.1] - 2026-09-06
 
 ### Added
