@@ -1,15 +1,39 @@
 {
   "name": "worker-board",
   "displayName": "Worker Board",
-  "description": "Panel w pasku bocznym VS Code pokazujacy zadania Claude Code, Sparka i Codexa.",
+  "description": "Sidebar panel showing what your Claude Code, Spark and Codex AI agents are doing right now, across sessions and subagents.",
   "version": "0.5.1",
   "publisher": "dtcode",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DTCodePL/WorkerBoard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DTCodePL/WorkerBoard/issues"
+  },
+  "homepage": "https://github.com/DTCodePL/WorkerBoard#readme",
   "engines": {
     "vscode": "^1.96.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
   ],
+  "keywords": [
+    "claude-code",
+    "ai-agents",
+    "agent-monitoring",
+    "background-tasks",
+    "session-tracker",
+    "subagents",
+    "codex"
+  ],
+  "galleryBanner": {
+    "color": "#061126",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onStartupFinished"
   ],

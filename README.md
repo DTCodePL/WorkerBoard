@@ -1,5 +1,8 @@
 # Worker Board
 
+Rozszerzenie jest bezpłatne i dostępne w Visual Studio Marketplace:
+`code --install-extension dtcode.worker-board`.
+
 ## Czym to jest
 
 Rozszerzenie VS Code z panelem w pasku bocznym, pokazującym w jednym miejscu
@@ -269,38 +272,9 @@ Wszystkie klucze `workerBoard.*` (`Ustawienia` → `Worker Board` w VS Code):
 
 ## Publikacja (opcjonalnie)
 
-Dziś rozszerzenie jest przeznaczone do **instalacji ręcznej z pliku `.vsix`**
-(dokładnie tak, jak robi to `install.ps1`) — do tego nie potrzeba niczego
-więcej niż jest w tym repozytorium.
-
-Gdyby w przyszłości padła decyzja o publikacji w sklepie rozszerzeń, warto
-wiedzieć:
-
-- **Manifest wymaga czterech pól, które już mamy:** `name`, `version`
-  (SemVer), `publisher`, `engines.vscode` (nie może być `*`). Samo
-  `vsce publish` nie wymaga żadnych dodatkowych pól manifestu — wymaga
-  natomiast **zarejestrowanego publishera** i **poświadczenia** (PAT, OIDC
-  albo Entra ID).
-- **Przed publikacją trzeba dodatkowo uzupełnić:** pole `repository`, pole
-  `license` oraz plik `LICENSE` (wybór licencji należy do właściciela — nie
-  jest to zrobione za niego przez ten instalator), a także `icon` — musi być
-  plikiem **PNG o rozmiarze minimum 128×128 px** (zalecane 256×256 dla
-  ekranów Retina); **SVG jest niedozwolony** jako ikona publikowanego
-  rozszerzenia. Obecna `media/board.svg` to ikona kontenera w pasku
-  aktywności VS Code — inna rzecz, i nie zastępujemy jej tą ikoną.
-- **Zalecane, choć nieobowiązkowe:** `categories` (wyłącznie wartości z
-  zamkniętej listy Marketplace), `keywords` (limit 30 wpisów),
-  `galleryBanner`.
-- Bieżąca wersja stabilna VS Code to **1.136.1** (2 września 2026). Nasza
-  deklaracja `engines.vscode: "^1.96.0"` oznacza zgodność od 1.96.0 wzwyż —
-  to około czterdziestu wydań minor wstecz. To jest **obietnica
-  kompatybilności, nie dowód** — nikt tego rozszerzenia na 1.96 realnie nie
-  testował.
-- Alternatywą dla Visual Studio Marketplace jest **Open VSX**
-  (rejestr używany m.in. przez VSCodium i Theia): wymaga konta Eclipse,
-  podpisanego Publisher Agreement, namespace zgodnego z `publisher`, i
-  publikacji przez `npx ovsx publish`. Dla narzędzia instalowanego ręcznie,
-  jak dziś, nie jest potrzebna.
+Rozszerzenie jest gotowe do publikacji w Visual Studio Marketplace — manifest
+ma komplet wymaganych pól, ikonę PNG i plik `LICENSE`. Pełna procedura (PAT,
+logowanie, `vsce publish`, Open VSX) opisana jest w [`PUBLISHING.md`](PUBLISHING.md).
 
 ---
 
