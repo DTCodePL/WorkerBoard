@@ -173,12 +173,17 @@ function killTask(boardView: BoardView, id: string | undefined, outputChannel: v
 async function clearFinishedHeartbeats(workerStatusPath: string, outputChannel: vscode.OutputChannel): Promise<void> {
   const finishedFiles = await listFinishedHeartbeatFiles(workerStatusPath);
   if (finishedFiles.length === 0) {
-    vscode.window.showInformationMessage('Brak zakończonych workerów do wyczyszczenia.');
+    vscode.window.showInformationMessage('Brak zakończonych lub przerwanych workerów do wyczyszczenia.');
     return;
   }
 
+  // Tekst mowi prawde o tym, co faktycznie zostanie usuniete -
+  // listFinishedHeartbeatFiles zwraca zarowno prawdziwie zakonczone
+  // (done/failed/killed), jak i osierocone (running z martwym PID, np. po
+  // zabiciu sesji Claude Code razem z workerem) - nigdy statusy nieznane
+  // ani running z zywym PID.
   const choice = await vscode.window.showWarningMessage(
-    `Usunac ${finishedFiles.length} plikow zakonczonych workerow z katalogu stanu?`,
+    `Usunac ${finishedFiles.length} plikow zakonczonych lub przerwanych workerow z katalogu stanu?`,
     { modal: true },
     'Usun'
   );

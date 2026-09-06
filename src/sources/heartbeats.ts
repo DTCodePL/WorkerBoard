@@ -18,12 +18,31 @@ const FINISHED_HEARTBEAT_STATUSES: ReadonlySet<TaskStatus> = new Set([
   TaskStatus.Stale
 ]);
 
-// Uzywane przez komende "Wyczysc zakonczone" - zwraca pelne sciezki plikow
-// heartbeatu, ktorych rozwiazany status (z weryfikacja PID) jest zakonczony.
-// Nigdy nie zwraca pliku ze statusem "running" ani z NIEZNANYM statusem -
-// nie kasujemy niczego, czego nie potrafimy jednoznacznie sklasyfikowac.
-// Ostrzezenia o takich plikach i tak trafiaja do OutputChannel przy okazji
-// zwyklego scanHeartbeats(), wiec nie duplikujemy logowania tutaj.
+// Uzywane przez komende "Usun zakonczone rekordy" - zwraca pelne sciezki
+// plikow heartbeatu, ktorych rozwiazany status (z weryfikacja PID) jest
+// zakonczony ALBO osierocony.
+//
+// WAZNE - to NIE lamie zakazu "nie kasuj niczego, czego nie potrafimy
+// jednoznacznie sklasyfikowac": ten zakaz dotyczy statusu NIEZNANEGO
+// (dryf schematu, literowka - patrz parseStatus). Rekord ze statusem
+// "running" i martwym PID-em NIE jest nieznany - resolveStatus() rozwiazuje
+// go jednoznacznie do TaskStatus.Stale, dokladnie ta sama funkcja
+// isProcessAlive(), ktorej uzywa scanHeartbeats() do wyznaczenia statusu
+// pokazywanego na panelu ("przerwany"). Klasyfikacja jest tu PEWNA - proces
+// o tym PID nie istnieje, wiec przebieg na pewno sie zakonczyl - nie jest
+// to zgadywanie. Dlatego Stale slusznie jest juz w tym zbiorze.
+//
+// Rekord bez pola pid albo z pid niebedacym liczba jest w resolveStatus()
+// traktowany jako wciaz "running" (nie da sie zweryfikowac martwoty procesu
+// bez PID) i NIGDY nie trafia tutaj - to jest posrednia, ale celowa ochrona
+// "nie kasuj tego, czego nie jestesmy pewni".
+//
+// Nigdy nie zwraca pliku z NIEZNANYM statusem (resolveStatus zwraca wtedy
+// undefined, zanim jeszcze dojdzie do sprawdzenia PID) - regula
+// nietykalnosci nieznanego statusu jest silniejsza niz wykrycie martwego
+// procesu, niezaleznie od tego, jaki PID niesie taki rekord.
+// Ostrzezenia o pominietych plikach i tak trafiaja do OutputChannel przy
+// okazji zwyklego scanHeartbeats(), wiec nie duplikujemy logowania tutaj.
 export async function listFinishedHeartbeatFiles(workerStatusDir: string): Promise<string[]> {
   let fileNames: string[];
   try {
@@ -186,11 +205,19 @@ async function resolveStatus(record: HeartbeatRecord): Promise<TaskStatus | unde
   }
 
   // Rekord twierdzi, ze proces dziala - zweryfikuj to po PID, zeby wykryc
-  // przebiegi osierocone (np. po awarii maszyny lub zabiciu procesu poza
-  // rozszerzeniem, bez aktualizacji pliku heartbeatu).
+  // przebiegi osierocone (np. sesja Claude Code zabita razem z workerem,
+  // zanim ten zdazyl domknac wlasny rekord). Ta SAMA funkcja i ta sama
+  // decyzja (Stale) jest uzywana zarowno do statusu pokazywanego na panelu
+  // ("przerwany"), jak i do listFinishedHeartbeatFiles() - jedno miejsce
+  // prawdy, zero drugiej implementacji sprawdzania PID.
   if (typeof record.pid === 'number' && Number.isFinite(record.pid)) {
     return isProcessAlive(record.pid) ? TaskStatus.Running : TaskStatus.Stale;
   }
+  // Brak PID-u albo PID nie bedacy liczba - nie da sie zweryfikowac
+  // martwoty procesu, wiec rekord ZOSTAJE "running" (nie awansujemy go do
+  // Stale na podstawie braku danych). To posrednio chroni go tez przed
+  // skasowaniem przez listFinishedHeartbeatFiles - "running" nigdy nie jest
+  // w FINISHED_HEARTBEAT_STATUSES.
   return TaskStatus.Running;
 }
 
