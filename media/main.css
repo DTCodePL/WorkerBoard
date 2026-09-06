@@ -49,6 +49,14 @@ body {
   text-transform: uppercase;
 }
 
+/* Naglowek ogolny panelu - jedna liczba (laczna liczba widocznych zadan),
+   bez nazwy sekcji (nie ma juz sekcji per silnik - grupowanie jest po
+   zadaniach/sesjach). justify-content:flex-start, zeby pojedyncze dziecko
+   nie "uciekalo" na sam koniec przy space-between z gory. */
+.overall-header {
+  justify-content: flex-start;
+}
+
 .section-count {
   font-weight: 400;
   text-transform: none;

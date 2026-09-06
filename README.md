@@ -18,18 +18,26 @@ Co pokazuje:
 
 ## Co widać na wierszu
 
-Panel grupuje zadania w sekcje: po jednej na każdy silnik (Claude, Spark,
-Codex) oraz osobną sekcję **"Czekają na Ciebie"** na sesje Claude Code
-czekające na reakcję człowieka. Nagłówek każdej sekcji niesie **licznik** —
-liczbę kart, które w danej chwili do niej należą.
+Panel **nie ma** sekcji per silnik ani osobnej sekcji na sesje czekające.
+Układ to jedno **drzewo zakorzenione w konwersacji**: korzeniem każdej gałęzi
+jest sesja Claude Code, a pod nią — wcięte, o stały krok na każdym kolejnym
+poziomie — wiszą wszystkie jej podzadania **niezależnie od silnika**:
+subagenci Claude oraz workery Spark i Codex przypięte przez `sessionId`
+(patrz [KRYTYCZNE: jak używać](#krytyczne-jak-używać)). Sesja zostaje
+widoczna w drzewie nawet wtedy, gdy sama nic nie robi, o ile ma choć jedno
+widoczne dziecko — inaczej start pojedynczego workera zwijałby całą gałąź.
+Na końcu drzewa stoi grupa zapasowa **„Bez przypisania"** na workery, których
+nie da się przypiąć do żadnej widocznej konwersacji. Nagłówek panelu niesie
+jedną liczbę — łączną liczbę widocznych zadań w całym drzewie, nie sumę per
+sekcja (bo sekcji per silnik już nie ma).
 
-Pojedynczy wiersz (karta) składa się z:
+Pojedynczy wiersz składa się z:
 
 | Element | Opis |
 | --- | --- |
 | **Plakietka statusu** | Jedyny nośnik koloru w wierszu — patrz sekcja [Statusy](#statusy). |
 | **Tytuł** | Nazwa sesji/subagenta/workera (dla subagenta: jego `subtitle`, jeśli jest). |
-| **Linia meta** | Drugi wiersz karty, tekst bez tła, w dwóch stopniach hierarchii wizualnej: `agentType` + skrócony **model** w kolorze pierwszoplanowym, reszta (**effort**, nazwa **repo**, **gałąź**, **bieżące narzędzie/aktywność**, PID, kontekst, tokeny) w kolorze opisowym, oddzielone `·`. |
+| **Linia meta** | Drugi wiersz, tekst bez tła. **Zaczyna się od nazwy silnika** (`claude`/`codex`/`spark`, małymi literami) — bez sekcji per silnik to jedyny sposób, żeby wiersz sam mówił, na czym leci. Nazwa silnika jest **pomijana**, gdy skrócony model już się od niej zaczyna (np. `spark-1.3` przy silniku `spark` — powtórzenie byłoby czystym szumem). Dalej, w dwóch stopniach hierarchii wizualnej: dla subagenta jego rola + skrócony **model** w kolorze pierwszoplanowym, reszta (**effort**, nazwa **repo**, **gałąź**, PID, **bieżące narzędzie/aktywność**, kontekst, tokeny) w kolorze opisowym, oddzielone `·`. Przykłady: `claude · opus · high · ZebraniFE · main · Bash · 429k/1M · 4.2M`, `spark-1.3 · medium · WorkerBoard · PID 33664` (tu `spark` jest pominięty). |
 | **Pasek kontekstu** | Wąski pasek wypełnienia pod linią meta — rysowany **tylko**, gdy znane są jednocześnie `contextTokens` i `contextWindow` (bez tych danych karta kończy się na dwóch liniach, bez pustego paska). |
 
 Kolor paska kontekstu jest **sygnałem, nie dekoracją** — progi liczone są
@@ -79,6 +87,13 @@ zgadujący aktywność):
 
 Subagenci i workery (Spark/Codex) nigdy nie dostają statusu "czeka" — ten
 status istnieje wyłącznie dla sesji głównych Claude Code.
+
+„Czeka" **nie jest już osobną sekcją** — to stan wiersza. Sesja czekająca
+stoi w drzewie dokładnie tam, gdzie wynika to z jej miejsca w konwersacji
+(korzeń swojej gałęzi), tyle że **wygaszona** (obniżona krycie) i z
+**zamrożonym licznikiem** `od X min` — w przeciwieństwie do zadań "w toku",
+których licznik tyka co sekundę, ten stoi w miejscu, bo sesja nic już nie
+robi.
 
 ---
 
@@ -148,6 +163,15 @@ Codex nie zapisuje żadnego znacznika zakończenia przebiegu. Wrapper naprawia
 to sam — pisze i domyka rekord stanu w
 `~/.claude/worker-status/<id>.json` oraz pełny log w
 `~/.claude/worker-status/logs/<id>.log` przez cały czas trwania przebiegu.
+
+**Przypisanie workera do konwersacji jest automatyczne.** Rekord stanu niesie
+pole `sessionId`, którym panel dopina worker pod właściwą gałąź drzewa (patrz
+[Co widać na wierszu](#co-widać-na-wierszu)). Wrapper wypełnia je samodzielnie
+ze zmiennej środowiskowej `CLAUDE_CODE_SESSION_ID`, dziedziczonej przez
+proces potomny — **nie trzeba niczego podawać ręcznie**. Pole jest opcjonalne:
+rekordy zapisane przed wprowadzeniem tego mechanizmu oraz workery uruchomione
+poza Claude Code (bez tej zmiennej w środowisku) go nie mają i trafiają do
+grupy „Bez przypisania".
 
 Instalator wdraża też zmodyfikowaną wersję skilla Claude Code
 `external-workers` (`~/.claude/skills/external-workers/SKILL.md`) —
@@ -239,6 +263,7 @@ Wszystkie klucze `workerBoard.*` (`Ustawienia` → `Worker Board` w VS Code):
 | Worker (Spark/Codex) nie pojawia się w panelu mimo że działa | Został uruchomiony z pominięciem `~/.claude/bin/worker-run.ps1` — zobacz sekcję [KRYTYCZNE: jak używać](#krytyczne-jak-używać). Surowe wywołanie `wsl.exe`/`codex.cmd` nie zostawia śladu, który panel mógłby odczytać. |
 | Instalator przerywa na kroku A | Brakuje twardego wymagania (Node < 20, brak `npm`, brak `code`/`code-insiders` w PATH) — tabela wypisana przez instalator wskazuje które. |
 | Instalator zgłasza brak `muse`/`codex` | To ostrzeżenie (wymaganie miękkie), nie błąd — reszta panelu działa, tylko dany silnik workerów będzie niewidoczny. |
+| Worker Spark/Codex wylądował w grupie „Bez przypisania" zamiast pod właściwą sesją | Jego rekord stanu nie ma pola `sessionId` — to rekord zapisany przed wprowadzeniem tego mechanizmu, albo worker uruchomiony poza Claude Code (bez zmiennej środowiskowej `CLAUDE_CODE_SESSION_ID` w środowisku procesu). To nie jest błąd, tylko brak danych do przypięcia — worker i tak jest widoczny, tylko poza drzewem konwersacji. |
 
 ---
 

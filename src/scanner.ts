@@ -11,7 +11,7 @@
 // sie sobie pozwolic dla wszystkich przeskanowanych zadan (dzis 31 przed
 // filtrem, 2 po filtrze).
 
-import { TaskEngine, TaskStatus, WorkerTask } from './model.js';
+import { TaskEngine, TaskKind, TaskStatus, WorkerTask } from './model.js';
 import { scanHeartbeats } from './sources/heartbeats.js';
 import { ClaudeSource } from './sources/claude.js';
 import { computeClaudeMetrics } from './sources/claude-metrics.js';
@@ -28,9 +28,12 @@ export interface ScanConfig {
   readonly waitingLookbackMinutes: number;
 }
 
-// Panel pokazuje zadania w toku ORAZ sesje czekajace na uzytkownika - to
-// jedyne dwa statusy, ktore maja prawo trafic do webview.
-const VISIBLE_STATUSES: ReadonlySet<TaskStatus> = new Set([TaskStatus.Running, TaskStatus.WaitingForUser]);
+// Widocznosc pojedynczego LISCIA (subagent, worker) bez zmian od
+// poprzednich rund: tylko Running. Sesje maja dodatkowa sciezke widocznosci
+// (patrz resolveVisibleSessionIds) - moga byc widoczne przez WaitingForUser
+// LUB przez posiadanie widocznego dziecka, nawet gdy same nie pracuja.
+const LEAF_VISIBLE_STATUSES: ReadonlySet<TaskStatus> = new Set([TaskStatus.Running]);
+const SESSION_OWN_VISIBLE_STATUSES: ReadonlySet<TaskStatus> = new Set([TaskStatus.Running, TaskStatus.WaitingForUser]);
 
 export interface ScanLogger {
   warn(message: string): void;
@@ -65,9 +68,14 @@ export class Scanner {
     }
 
     const allTasks = [...heartbeatResult.tasks, ...claudeResult.tasks];
-    const visibleTasks = allTasks.filter((task) => VISIBLE_STATUSES.has(task.status));
+    const visibleTasks = this.resolveVisibleTasks(allTasks);
 
     const enrichedTasks = await Promise.all(visibleTasks.map((task) => this.enrichTask(task, config)));
+
+    // Na koniec kazdego pelnego skanu usun z cache wpisy, o ktore w tym
+    // cyklu nikt nie pytal (np. sesja wypadla z okna lookback) - inaczej
+    // mapa rosnie bez ograniczen przy dlugo dzialajacym VS Code.
+    this.claudeSource.pruneCaches();
 
     const scannedAt = Date.now();
     const durationMs = scannedAt - startedAt;
@@ -76,6 +84,46 @@ export class Scanner {
     }
 
     return { tasks: enrichedTasks, scannedAt, durationMs };
+  }
+
+  // Sesja jest widoczna, gdy jest Running/WaitingForUser SAMA, ALBO ma co
+  // najmniej jedno widoczne dziecko (subagent w jej drzewie, badz worker
+  // Spark/Codex, ktorego sessionId na nia wskazuje). Ten drugi warunek jest
+  // kluczowy: uzytkownik rozsyla workerow i wtedy sama konwersacja czeka -
+  // grupa nie moze przez to zniknac razem z dziecmi. Workery/subagenci maja
+  // wlasna, niezmienioną regule (tylko Running) - to tutaj sie nie zmienia,
+  // zmienia sie wylacznie to, CZY SESJA (rodzic) trafia do migawki.
+  private resolveVisibleTasks(allTasks: readonly WorkerTask[]): WorkerTask[] {
+    const sessions = allTasks.filter((task) => task.kind === TaskKind.Session);
+    const visibleSubagents = allTasks.filter((task) => task.kind === TaskKind.Subagent && LEAF_VISIBLE_STATUSES.has(task.status));
+    const visibleWorkers = allTasks.filter((task) => task.kind === TaskKind.Worker && LEAF_VISIBLE_STATUSES.has(task.status));
+
+    // Subagent id ma zawsze ksztalt "<sessionUuid>:agent-<agentId>" -
+    // sessionUuid (korzen drzewa) jest wiec pierwszym segmentem, niezaleznie
+    // od glebokosci zagniezdzenia.
+    const sessionIdsWithVisibleSubagent = new Set(visibleSubagents.map((task) => task.id.split(':')[0]));
+    const sessionIdsWithVisibleWorker = new Set(
+      visibleWorkers.filter((task) => task.sessionId !== undefined).map((task) => task.sessionId as string)
+    );
+
+    const visibleSessionIds = new Set<string>();
+    for (const session of sessions) {
+      const ownVisible = SESSION_OWN_VISIBLE_STATUSES.has(session.status);
+      const hasVisibleChild = sessionIdsWithVisibleSubagent.has(session.id) || sessionIdsWithVisibleWorker.has(session.id);
+      if (ownVisible || hasVisibleChild) {
+        visibleSessionIds.add(session.id);
+      }
+    }
+
+    const visibleSessions = sessions.filter((session) => visibleSessionIds.has(session.id));
+    // Grupa zapasowa "BEZ PRZYPISANIA": worker bez sessionId, albo z
+    // sessionId, ktory nie odpowiada zadnej WIDOCZNEJ sesji (np. sesja
+    // sama nie pracuje i nie ma innych widocznych dzieci) - bez tej grupy
+    // takie rekordy znikalyby bez sladu.
+    const attachedWorkers = visibleWorkers.filter((task) => task.sessionId !== undefined && visibleSessionIds.has(task.sessionId));
+    const unassignedWorkers = visibleWorkers.filter((task) => task.sessionId === undefined || !visibleSessionIds.has(task.sessionId));
+
+    return [...visibleSessions, ...visibleSubagents, ...attachedWorkers, ...unassignedWorkers];
   }
 
   private async enrichTask(task: WorkerTask, config: ScanConfig): Promise<WorkerTask> {

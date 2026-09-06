@@ -2,7 +2,7 @@
   "name": "worker-board",
   "displayName": "Worker Board",
   "description": "Panel w pasku bocznym VS Code pokazujacy zadania Claude Code, Sparka i Codexa.",
-  "version": "0.4.1",
+  "version": "0.5.1",
   "publisher": "dtcode",
   "engines": {
     "vscode": "^1.96.0"

@@ -44,6 +44,11 @@ export interface WorkerTask {
   readonly transcriptPath?: string;
   readonly depth?: number;
   readonly parentId?: string;
+  // Wylacznie TaskKind.Worker (Spark/Codex): id sesji Claude, do ktorej
+  // wpisal ten worker (z env CLAUDE_CODE_SESSION_ID w worker-run.ps1). Pole
+  // opcjonalne - starsze rekordy i workery odpalone poza Claude Code go nie
+  // maja, trafiaja wtedy do grupy zapasowej "BEZ PRZYPISANIA".
+  readonly sessionId?: string;
   // Metryki - doliczane WYLACZNIE dla zadan, ktore przeszly filtr Running
   // (patrz scanner.ts), nigdy dla calej migawki przed filtrowaniem. Kazde
   // pole zostaje undefined, gdy nie da sie go wyznaczyc - nigdy zero ani
@@ -69,12 +74,15 @@ export interface HeartbeatRecord {
   readonly title: string;
   readonly repo?: string | null;
   readonly briefPath?: string | null;
-  readonly pid: number;
+  // Opcjonalne - worker moze jeszcze nie miec PID-u (np. nie zdazyl
+  // wystartowac). Pole NIE jest na liscie wymaganych do zbudowania zadania.
+  readonly pid?: number | null;
   readonly startedAt: string;
   readonly finishedAt?: string | null;
   readonly exitCode?: number | null;
   readonly status: string;
   readonly logPath?: string | null;
+  readonly sessionId?: string | null;
 }
 
 // Migawka wyslana z rozszerzenia do webview.

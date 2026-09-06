@@ -24,11 +24,15 @@ import { FileCache } from '../util/file-cache.js';
 //   nic) - sesja jest wtedy ukryta, nie zgadujemy w zadna strone.
 const RUNNING_STOP_REASON = 'tool_use';
 
-// Okno "model komponuje kolejny krok". Po zakonczeniu narzedzia jego tool_result
-// jest juz sparowany, wiec przez kilkadziesiat sekund generowania nie ma w pliku
-// zadnego niesparowanego wywolania - a sesja realnie pracuje. Swiezy mtime przy
-// nadal otwartej turze (stop_reason 'tool_use', brak nowszej wiadomosci user)
-// jest dowodem, ze plik jest w tej chwili dopisywany przez te sesje.
+// Okno "model komponuje kolejny krok". PRZYWROCONE SWIADOMIE - nie usuwac.
+// Gdy narzedzie sie konczy, jego tool_result jest juz sparowany, wiec przez
+// kilkadziesiat sekund generowania w pliku nie ma zadnego niesparowanego
+// wywolania, a sesja realnie pracuje. Bez tego warunku panel gasnie w trakcie
+// pracy - zglosil to wlasciciel po zobaczeniu pustego panelu przy dzialajacym
+// zadaniu. Warunek NIE przywraca wczesniejszego bledu (sesja "aktywna" tuz po
+// wiadomosci uzytkownika), bo wymaga, zeby to ASYSTENT odezwal sie jako ostatni
+// (brak nowszej wiadomosci user) - stan "uzytkownik napisal i cisza" pozostaje
+// ukryty.
 const GENERATING_WINDOW_MS = 60_000;
 const CLOSED_TURN_STOP_REASONS: ReadonlySet<string> = new Set(['end_turn', 'stop_sequence', 'max_tokens']);
 
@@ -117,6 +121,15 @@ export class ClaudeSource {
   // wielomegabajtowego pliku dwa razy.
   private readonly sessionMetaCache = new FileCache<SessionMeta>();
 
+  // Wolane raz na koniec kazdego pelnego skanu (patrz scanner.ts) - usuwa z
+  // obu cache wpisy dla plikow, o ktore nikt juz nie pytal w tym cyklu (np.
+  // sesja wypadla z okna lookback), zeby mapa nie rosla bez ograniczen przy
+  // dlugo dzialajacym VS Code i rotujacych sesjach.
+  public pruneCaches(): void {
+    this.completionCache.pruneUnseen();
+    this.sessionMetaCache.pruneUnseen();
+  }
+
   public async scan(
     projectsRoot: string,
     lookbackHours: number,
@@ -169,7 +182,9 @@ export class ClaudeSource {
           continue;
         }
 
-        const sessionMeta = await this.sessionMetaCache.getOrCompute(sessionFilePath, extractSessionMeta);
+        const sessionMeta = await this.sessionMetaCache.getOrCompute(sessionFilePath, extractSessionMeta, (message) =>
+          warnings.push(message)
+        );
         const title = sessionMeta?.title ?? slug;
         const repo = sessionMeta?.cwd ?? slug;
 
@@ -283,7 +298,8 @@ export class ClaudeSource {
         meta.stoppedByUser === true,
         agentStat.mtimeMs,
         now,
-        staleAfterMs
+        staleAfterMs,
+        (message) => warnings.push(message)
       );
 
       tasks.push({
@@ -316,9 +332,10 @@ export class ClaudeSource {
     stoppedByUser: boolean,
     lastActivityAt: number,
     now: number,
-    staleAfterMs: number
+    staleAfterMs: number,
+    onWarning: (message: string) => void
   ): Promise<TaskStatus> {
-    const signals = await this.completionCache.getOrCompute(parentFilePath, extractCompletionSignals);
+    const signals = await this.completionCache.getOrCompute(parentFilePath, extractCompletionSignals, onWarning);
 
     // 1. Sciezka asynchroniczna - kolejka pisze <task-notification> z
     //    agentId w <task-id> i ostatecznym stanem w <status>. To jedyny

@@ -20,7 +20,10 @@ const FINISHED_HEARTBEAT_STATUSES: ReadonlySet<TaskStatus> = new Set([
 
 // Uzywane przez komende "Wyczysc zakonczone" - zwraca pelne sciezki plikow
 // heartbeatu, ktorych rozwiazany status (z weryfikacja PID) jest zakonczony.
-// Nigdy nie zwraca pliku ze statusem "running".
+// Nigdy nie zwraca pliku ze statusem "running" ani z NIEZNANYM statusem -
+// nie kasujemy niczego, czego nie potrafimy jednoznacznie sklasyfikowac.
+// Ostrzezenia o takich plikach i tak trafiaja do OutputChannel przy okazji
+// zwyklego scanHeartbeats(), wiec nie duplikujemy logowania tutaj.
 export async function listFinishedHeartbeatFiles(workerStatusDir: string): Promise<string[]> {
   let fileNames: string[];
   try {
@@ -37,8 +40,11 @@ export async function listFinishedHeartbeatFiles(workerStatusDir: string): Promi
     try {
       const content = await fs.readFile(filePath, 'utf8');
       const record = JSON.parse(content) as HeartbeatRecord;
+      if (validateRecordShape(record) !== undefined) {
+        continue;
+      }
       const status = await resolveStatus(record);
-      if (FINISHED_HEARTBEAT_STATUSES.has(status)) {
+      if (status !== undefined && FINISHED_HEARTBEAT_STATUSES.has(status)) {
         finishedPaths.push(filePath);
       }
     } catch {
@@ -69,11 +75,18 @@ export async function scanHeartbeats(workerStatusDir: string): Promise<Heartbeat
     try {
       const content = await fs.readFile(filePath, 'utf8');
       const record = JSON.parse(content) as HeartbeatRecord;
+
+      const shapeError = validateRecordShape(record);
+      if (shapeError !== undefined) {
+        warnings.push(`Pominieto heartbeat ${fileName}: ${shapeError} - plik pozostaje nietkniety.`);
+        continue;
+      }
+
       const task = await toWorkerTask(record);
       if (task) {
         tasks.push(task);
       } else {
-        warnings.push(`Pominieto plik heartbeatu o nieznanym silniku: ${fileName}`);
+        warnings.push(`Pominieto plik heartbeatu ${fileName}: nierozpoznany silnik lub status - plik pozostaje nietkniety.`);
       }
     } catch (error: unknown) {
       warnings.push(`Nie udalo sie odczytac heartbeatu ${fileName}: ${describeError(error)}`);
@@ -83,6 +96,32 @@ export async function scanHeartbeats(workerStatusDir: string): Promise<Heartbeat
   return { tasks, warnings };
 }
 
+// Waliduje obecnosc i typ pol WYMAGANYCH do bezpiecznego zbudowania
+// WorkerTask (id, engine, status, title, startedAt - pid NIE jest
+// wymagany, worker moze nie miec jeszcze PID-u). Rekord bez tych pol nie
+// jest "ratowany" wartosciami zastepczymi - jest pomijany w calosci, zeby
+// nie trafil do webview jako zadanie z polami "undefined" (dataset.id
+// literalnie "undefined", sortowanie po NaN, akcje Log/Zabij przestajace
+// dzialac).
+function validateRecordShape(record: HeartbeatRecord): string | undefined {
+  if (typeof record.id !== 'string' || record.id.length === 0) {
+    return 'brak pola id';
+  }
+  if (typeof record.engine !== 'string' || record.engine.length === 0) {
+    return 'brak pola engine';
+  }
+  if (typeof record.status !== 'string' || record.status.length === 0) {
+    return 'brak pola status';
+  }
+  if (typeof record.title !== 'string' || record.title.length === 0) {
+    return 'brak pola title';
+  }
+  if (typeof record.startedAt !== 'string' || record.startedAt.length === 0) {
+    return 'brak pola startedAt';
+  }
+  return undefined;
+}
+
 async function toWorkerTask(record: HeartbeatRecord): Promise<WorkerTask | undefined> {
   const engine = parseEngine(record.engine);
   if (!engine) {
@@ -90,11 +129,19 @@ async function toWorkerTask(record: HeartbeatRecord): Promise<WorkerTask | undef
   }
 
   const status = await resolveStatus(record);
+  if (status === undefined) {
+    // Status nierozpoznany (dryf schematu, literowka, czesciowy zapis) -
+    // NIGDY nie zgadujemy najblizszego dopasowania. Rekord znika z
+    // prezentacji, plik zostaje nietkniety na dysku.
+    return undefined;
+  }
+
   const startedAt = parseDate(record.startedAt);
   const finishedAt = parseDate(record.finishedAt ?? undefined);
   const modelLabel = record.model ?? undefined;
   const effortLabel = record.effort ?? undefined;
   const subtitle = [modelLabel, effortLabel].filter((part): part is string => Boolean(part)).join(' - ') || undefined;
+  const pid = typeof record.pid === 'number' && Number.isFinite(record.pid) ? record.pid : undefined;
 
   return {
     id: record.id,
@@ -104,7 +151,7 @@ async function toWorkerTask(record: HeartbeatRecord): Promise<WorkerTask | undef
     title: record.title,
     subtitle,
     repo: record.repo ?? undefined,
-    pid: record.pid,
+    pid,
     startedAt,
     finishedAt,
     lastActivityAt: finishedAt ?? startedAt,
@@ -118,12 +165,22 @@ async function toWorkerTask(record: HeartbeatRecord): Promise<WorkerTask | undef
     // Dla Codexa tokensUsed doliczany jest pozniej (patrz codex-tokens.ts),
     // wylacznie dla zadan po filtrze Running.
     model: modelLabel,
-    effort: effortLabel
+    effort: effortLabel,
+    // Opcjonalne - starsze rekordy i workery odpalone poza Claude Code go
+    // nie maja (worker-run.ps1 wypelnia je z CLAUDE_CODE_SESSION_ID). Brak
+    // dopasowania do zadnej widocznej sesji ladowuje do grupy zapasowej.
+    sessionId: record.sessionId ?? undefined
   };
 }
 
-async function resolveStatus(record: HeartbeatRecord): Promise<TaskStatus> {
+// Zwraca undefined dla statusu NIEROZPOZNANEGO - jawnie odrozniony od
+// kazdego ze znanych statusow, zeby nie dalo sie go pomylic z "Failed" i
+// przypadkiem zakwalifikowac jako zakonczony/do skasowania.
+async function resolveStatus(record: HeartbeatRecord): Promise<TaskStatus | undefined> {
   const rawStatus = parseStatus(record.status);
+  if (rawStatus === undefined) {
+    return undefined;
+  }
   if (rawStatus !== TaskStatus.Running) {
     return rawStatus;
   }
@@ -147,7 +204,9 @@ function parseEngine(value: string): TaskEngine | undefined {
   return undefined;
 }
 
-function parseStatus(value: string): TaskStatus {
+// Tylko statusy JAWNIE rozpoznane - kazda inna wartosc (dryf schematu,
+// literowka, czesciowy zapis) zwraca undefined, nigdy domyslne "Failed".
+function parseStatus(value: string): TaskStatus | undefined {
   switch (value) {
     case TaskStatus.Running:
       return TaskStatus.Running;
@@ -158,7 +217,7 @@ function parseStatus(value: string): TaskStatus {
     case TaskStatus.Killed:
       return TaskStatus.Killed;
     default:
-      return TaskStatus.Failed;
+      return undefined;
   }
 }
 

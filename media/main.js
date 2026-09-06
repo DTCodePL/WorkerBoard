@@ -3,14 +3,17 @@
 // textContent albo przypisanie do wlasciwosci .title (bezpieczny atrybut
 // tekstowy, nie znacznik).
 //
-// Panel pokazuje zadania w toku (Running) i sesje czekajace na uzytkownika
-// (WaitingForUser) - rozszerzenie filtruje migawke do tych dwoch statusow
-// przed wyslaniem (patrz scanner.ts). Wiersz, nie karta: brak obrysu/tla poza
-// hover, kolor tylko na plakietce statusu.
+// Grupowanie po ZADANIACH, nie po silnikach: korzen drzewa to zawsze sesja
+// Claude, dziecmi sa jej subagenci ORAZ workery Spark/Codex, ktorych
+// sessionId wskazuje na ta sesje - niezaleznie od silnika. Workery bez
+// dopasowania trafiaja do grupy zapasowej "BEZ PRZYPISANIA" na koncu.
+// Rozszerzenie filtruje migawke do Running/WaitingForUser (z dodatkowa
+// regula widocznosci sesji przez dzieci) przed wyslaniem - patrz scanner.ts.
+// Wiersz, nie karta: brak obrysu/tla poza hover, kolor tylko na plakietce
+// statusu.
 (function () {
   const vscode = acquireVsCodeApi();
 
-  const TaskEngine = { Claude: 'claude', Spark: 'spark', Codex: 'codex' };
   const TaskStatus = {
     Running: 'running',
     WaitingForUser: 'waiting_for_user',
@@ -28,8 +31,6 @@
     Ready: 'ready'
   };
 
-  const ENGINE_LABELS = { claude: 'Claude', spark: 'Spark', codex: 'Codex' };
-  const ENGINE_ORDER = [TaskEngine.Claude, TaskEngine.Spark, TaskEngine.Codex];
   const NESTING_STEP_PX = 8;
   const CONTEXT_WARNING_RATIO = 0.8;
   const CONTEXT_DANGER_RATIO = 0.95;
@@ -77,32 +78,103 @@
   function render() {
     root.textContent = '';
 
-    const waitingTasks = latestTasks.filter((task) => task.status === TaskStatus.WaitingForUser);
-    const activeTasks = latestTasks.filter((task) => task.status !== TaskStatus.WaitingForUser);
-
-    if (activeTasks.length === 0 && waitingTasks.length === 0) {
+    if (latestTasks.length === 0) {
       root.appendChild(buildEmptyState());
       refreshTickInterval();
       return;
     }
 
-    for (const engine of ENGINE_ORDER) {
-      const engineTasks = activeTasks.filter((task) => task.engine === engine);
-      if (engineTasks.length === 0) {
-        // Sekcja bez zadan znika calkowicie - nie ma nagłowka z zerem.
-        continue;
+    const sessions = latestTasks.filter((task) => task.kind === TaskKind.Session);
+    const subagents = latestTasks.filter((task) => task.kind === TaskKind.Subagent);
+    const workers = latestTasks.filter((task) => task.kind === TaskKind.Worker);
+
+    const sessionIds = new Set(sessions.map((task) => task.id));
+    const attachedWorkers = workers.filter((task) => task.sessionId && sessionIds.has(task.sessionId));
+    const unassignedWorkers = workers.filter((task) => !task.sessionId || !sessionIds.has(task.sessionId));
+
+    root.appendChild(buildOverallHeader(latestTasks.length));
+
+    const list = document.createElement('div');
+    list.className = 'card-list';
+
+    // Subagenci pogrupowani po parentId - dla depth1 to zawsze id sesji, dla
+    // glebszych poziomow to id ich bezposredniego rodzica-subagenta.
+    const subagentsByParent = new Map();
+    for (const task of subagents) {
+      if (!subagentsByParent.has(task.parentId)) {
+        subagentsByParent.set(task.parentId, []);
       }
-      root.appendChild(buildSection(ENGINE_LABELS[engine], orderTasksAsTree(engineTasks), false));
+      subagentsByParent.get(task.parentId).push(task);
+    }
+    const attachedWorkersBySession = new Map();
+    for (const task of attachedWorkers) {
+      if (!attachedWorkersBySession.has(task.sessionId)) {
+        attachedWorkersBySession.set(task.sessionId, []);
+      }
+      attachedWorkersBySession.get(task.sessionId).push(task);
     }
 
-    if (waitingTasks.length > 0) {
-      // Malejaco po mtime (lastActivityAt) - najnowsze oczekujace na gorze.
-      // Zawsze plaska lista (tylko TaskKind.Session), bez drzewa subagentow.
-      const sorted = [...waitingTasks].sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
-      root.appendChild(buildSection('Czekają na Ciebie', sorted, true));
+    for (const session of sortByStartedAtDesc(sessions)) {
+      list.appendChild(buildCard(session, 0));
+      const directChildren = [
+        ...(subagentsByParent.get(session.id) ?? []),
+        ...(attachedWorkersBySession.get(session.id) ?? [])
+      ];
+      appendChildrenRecursive(list, directChildren, subagentsByParent, 1);
+    }
+    root.appendChild(list);
+
+    if (unassignedWorkers.length > 0) {
+      root.appendChild(buildUnassignedSection(unassignedWorkers));
     }
 
     refreshTickInterval();
+  }
+
+  function appendChildrenRecursive(list, children, subagentsByParent, depth) {
+    for (const task of sortByStartedAtDesc(children)) {
+      list.appendChild(buildCard(task, depth));
+      // Tylko subagenci moga miec dalsze dzieci (workery sa zawsze lisciem).
+      const grandchildren = subagentsByParent.get(task.id);
+      if (grandchildren) {
+        appendChildrenRecursive(list, grandchildren, subagentsByParent, depth + 1);
+      }
+    }
+  }
+
+  function buildOverallHeader(totalCount) {
+    const header = document.createElement('div');
+    header.className = 'section-header overall-header';
+    const count = document.createElement('span');
+    count.className = 'section-count';
+    count.textContent = String(totalCount);
+    header.appendChild(count);
+    return header;
+  }
+
+  function buildUnassignedSection(orderedTasks) {
+    const section = document.createElement('div');
+    section.className = 'section';
+
+    const header = document.createElement('div');
+    header.className = 'section-header';
+    const name = document.createElement('span');
+    name.textContent = 'Bez przypisania';
+    header.appendChild(name);
+    const count = document.createElement('span');
+    count.className = 'section-count';
+    count.textContent = String(orderedTasks.length);
+    header.appendChild(count);
+    section.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'card-list';
+    for (const task of sortByStartedAtDesc(orderedTasks)) {
+      list.appendChild(buildCard(task, 0));
+    }
+    section.appendChild(list);
+
+    return section;
   }
 
   function buildEmptyState() {
@@ -123,74 +195,18 @@
     return wrapper;
   }
 
-  function buildSection(headerText, orderedTasks, isWaitingSection) {
-    const section = document.createElement('div');
-    section.className = 'section';
-
-    const header = document.createElement('div');
-    header.className = 'section-header';
-
-    const name = document.createElement('span');
-    name.textContent = headerText;
-    header.appendChild(name);
-
-    const count = document.createElement('span');
-    count.className = 'section-count';
-    count.textContent = String(orderedTasks.length);
-    header.appendChild(count);
-
-    section.appendChild(header);
-
-    const list = document.createElement('div');
-    list.className = 'card-list';
-    for (const task of orderedTasks) {
-      list.appendChild(buildCard(task, isWaitingSection));
-    }
-    section.appendChild(list);
-
-    return section;
-  }
-
-  function orderTasksAsTree(tasks) {
-    const byId = new Map(tasks.map((task) => [task.id, task]));
-    const childrenByParent = new Map();
-    const topLevel = [];
-
-    for (const task of tasks) {
-      if (task.parentId && byId.has(task.parentId)) {
-        if (!childrenByParent.has(task.parentId)) {
-          childrenByParent.set(task.parentId, []);
-        }
-        childrenByParent.get(task.parentId).push(task);
-      } else {
-        topLevel.push(task);
-      }
-    }
-
-    const result = [];
-    const appendWithChildren = (list) => {
-      for (const task of sortByStartedAtDesc(list)) {
-        result.push(task);
-        const children = childrenByParent.get(task.id);
-        if (children) {
-          appendWithChildren(children);
-        }
-      }
-    };
-    appendWithChildren(topLevel);
-    return result;
-  }
-
   function sortByStartedAtDesc(tasks) {
-    // Kazde zadanie tutaj jest w toku (filtr Running), wiec jedyny sensowny
-    // porzadek to od najdluzej dzialajacego do najswiezszego.
+    // Malejaco po startedAt - od najdluzej dzialajacego do najswiezszego.
+    // Uzywane zarowno dla korzeni (sesje), jak i dzieci na kazdym poziomie
+    // drzewa oraz dla plaskiej listy "Bez przypisania".
     return [...tasks].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   }
 
-  function buildCard(task, isWaitingRow) {
+  function buildCard(task, depth) {
     const card = document.createElement('div');
     card.className = 'card';
     card.dataset.id = task.id;
+    const isWaitingRow = task.status === TaskStatus.WaitingForUser;
     if (isWaitingRow) {
       // Wygaszone, wracaja do pelnej widocznosci na hover/focus (patrz CSS).
       card.classList.add('card-waiting');
@@ -199,7 +215,10 @@
     const content = document.createElement('div');
     content.className = 'card-content';
 
-    const depth = task.depth ?? 0;
+    // Glebokosc renderowania jest POZYCJA W DRZEWIE (parametr depth), nie
+    // polem task.depth (spawnDepth istnieje tylko dla subagentow - workery
+    // dopiete przez sessionId nigdy go nie maja, mimo ze sa faktycznymi
+    // dziecmi sesji o glebokosci 1).
     if (depth > 0) {
       // Wciecie lewym paddingiem na WEWNETRZNYM wrapperze (nie na .card) -
       // .card sam manipuluje marginesem/paddingiem przy hover-bleed (patrz
@@ -343,24 +362,40 @@
   // jednym stopniem hierarchii: agentType+model w --vscode-foreground,
   // reszta w --vscode-descriptionForeground (patrz CSS .card-line2-primary
   // / .card-line2-secondary). Zero plakietek z tlem poza statusem.
+  // Bez naglowkow sekcji per silnik kazdy wiersz musi sam mowic, na czym
+  // leci - linia meta zaczyna sie od nazwy silnika (malymi literami).
+  // Deduplikacja: gdy skrocona nazwa modelu juz zaczyna sie od nazwy
+  // silnika (np. "spark-1.3" przy silniku "spark"), nazwa silnika sama w
+  // sobie jest pomijana - bylaby czystym powtorzeniem.
   function buildLine2(task) {
     const line = document.createElement('div');
     line.className = 'card-line2';
     const titleParts = [];
+
+    const modelAbbrev = abbreviateModel(task.model);
+    const showEngineLabel = !(modelAbbrev && modelAbbrev.toLowerCase().startsWith(task.engine.toLowerCase()));
+
+    if (showEngineLabel) {
+      const prefixSpan = document.createElement('span');
+      prefixSpan.className = 'card-line2-secondary';
+      prefixSpan.textContent = task.engine;
+      line.appendChild(prefixSpan);
+      titleParts.push(task.engine);
+    }
 
     const primaryParts = [];
     if (task.kind === TaskKind.Subagent && task.subtitle) {
       primaryParts.push(task.subtitle);
       titleParts.push(task.subtitle);
     }
-    if (task.model) {
-      primaryParts.push(abbreviateModel(task.model) ?? task.model);
+    if (modelAbbrev) {
+      primaryParts.push(modelAbbrev);
       titleParts.push(task.model);
     }
     if (primaryParts.length > 0) {
       const primarySpan = document.createElement('span');
       primarySpan.className = 'card-line2-primary';
-      primarySpan.textContent = primaryParts.join(' · ');
+      primarySpan.textContent = (showEngineLabel ? ' · ' : '') + primaryParts.join(' · ');
       line.appendChild(primarySpan);
     }
 
@@ -393,15 +428,15 @@
       titleParts.push(`kontekst ${formatWithThousandsSeparator(task.contextTokens)} / ${formatWithThousandsSeparator(task.contextWindow)}`);
     }
     if (hasTokens) {
-      secondaryParts.push(`${formatTokenCount(task.tokensUsed)} tok`);
+      secondaryParts.push(formatTokenCount(task.tokensUsed));
       titleParts.push(`tokeny ${formatWithThousandsSeparator(task.tokensUsed)}`);
     }
 
     if (secondaryParts.length > 0) {
-      const secondarySpan = document.createElement('span');
-      secondarySpan.className = 'card-line2-secondary';
-      secondarySpan.textContent = (primaryParts.length > 0 ? ' · ' : '') + secondaryParts.join(' · ');
-      line.appendChild(secondarySpan);
+      const secondarySuffixSpan = document.createElement('span');
+      secondarySuffixSpan.className = 'card-line2-secondary';
+      secondarySuffixSpan.textContent = (showEngineLabel || primaryParts.length > 0 ? ' · ' : '') + secondaryParts.join(' · ');
+      line.appendChild(secondarySuffixSpan);
     }
 
     if (titleParts.length > 0) {

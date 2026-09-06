@@ -98,21 +98,104 @@ async function main() {
   console.log(`\nCzas skanowania (wewnetrzny, scanner.durationMs): ${result.durationMs} ms`);
   console.log(`Czas skanowania (mierzony z zewnatrz, wall clock): ${wallClockMs} ms`);
 
-  const byEngine = groupBy(result.tasks, (task) => task.engine);
-  for (const [engine, tasks] of byEngine) {
-    console.log(`\n=== ${engine.toUpperCase()} (${tasks.length}) ===`);
-    for (const task of tasks) {
-      const indent = '  '.repeat(task.depth ?? 0);
-      console.log(
-        `${indent}[${task.kind}] ${task.status} | ${task.title} | agentType=${task.subtitle ?? '-'} | repo=${task.repo ?? '-'} | pid=${task.pid ?? '-'} | id=${task.id}`
-      );
-      console.log(
-        `${indent}    model=${task.model ?? '-'} effort=${task.effort ?? '-'} branch=${task.branch ?? '-'} currentActivity=${task.currentActivity ?? '-'} tokensUsed=${task.tokensUsed ?? '-'} contextTokens=${task.contextTokens ?? '-'} contextWindow=${task.contextWindow ?? '-'}`
-      );
-    }
-  }
+  console.log('\n--- Drzewo (grupowanie po zadaniach, nie po silnikach) ---');
+  printTree(result.tasks);
 
   await fs.rm(tempOutDir, { recursive: true, force: true });
+}
+
+// Odtwarza dokladnie ten sam model grupowania co media/main.js: korzen to
+// sesja Claude, dziecmi sa jej subagenci (parentId) ORAZ workery Spark/Codex
+// dopiete przez sessionId - a workery bez dopasowania trafiaja na koniec do
+// "BEZ PRZYPISANIA".
+function printTree(tasks) {
+  const sessions = tasks.filter((t) => t.kind === 'session');
+  const subagents = tasks.filter((t) => t.kind === 'subagent');
+  const workers = tasks.filter((t) => t.kind === 'worker');
+  const sessionIds = new Set(sessions.map((t) => t.id));
+  const attachedWorkers = workers.filter((t) => t.sessionId && sessionIds.has(t.sessionId));
+  const unassignedWorkers = workers.filter((t) => !t.sessionId || !sessionIds.has(t.sessionId));
+
+  const subagentsByParent = groupBy(subagents, (t) => t.parentId);
+  const workersBySession = groupBy(attachedWorkers, (t) => t.sessionId);
+
+  const printNode = (task, depth) => {
+    const indent = '  '.repeat(depth);
+    console.log(`${indent}[${task.kind}] ${task.status} | ${task.title} | id=${task.id}${task.sessionId ? ` | sessionId=${task.sessionId}` : ''}`);
+    console.log(`${indent}    metaLine="${buildMetaLine(task)}"`);
+  };
+
+  for (const session of sessions) {
+    printNode(session, 0);
+    const children = [...(subagentsByParent.get(session.id) ?? []), ...(workersBySession.get(session.id) ?? [])];
+    printChildren(children, subagentsByParent, printNode, 1);
+  }
+
+  if (unassignedWorkers.length > 0) {
+    console.log('[BEZ PRZYPISANIA]');
+    for (const task of unassignedWorkers) {
+      printNode(task, 1);
+    }
+  }
+}
+
+function printChildren(children, subagentsByParent, printNode, depth) {
+  for (const task of children) {
+    printNode(task, depth);
+    const grandchildren = subagentsByParent.get(task.id);
+    if (grandchildren) {
+      printChildren(grandchildren, subagentsByParent, printNode, depth + 1);
+    }
+  }
+}
+
+// Kopia logiki main.js (silnik + dedup + model + effort + reszta), do
+// weryfikacji z poziomu Node bez DOM.
+function abbreviateModel(model) {
+  if (!model) return undefined;
+  const claudeMatch = /claude-(opus|sonnet|haiku|fable)/i.exec(model);
+  if (claudeMatch) return claudeMatch[1].toLowerCase();
+  const sparkMatch = /muse-spark-([0-9.]+)/i.exec(model);
+  if (sparkMatch) return `spark-${sparkMatch[1]}`;
+  const gptMatch = /gpt-[\d.]+-(luna|terra|sol|astra)/i.exec(model);
+  if (gptMatch) return gptMatch[1].toLowerCase();
+  return model.length > 14 ? `${model.slice(0, 14)}…` : model;
+}
+
+function formatTokenCount(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+  if (n < 1000) return String(n);
+  if (n < 1000000) return `${Math.round(n / 1000)}k`;
+  let text = (n / 1000000).toFixed(1);
+  if (text.endsWith('.0')) text = text.slice(0, -2);
+  return `${text}M`;
+}
+
+function basename(value) {
+  const parts = value.split(/[\\/]/).filter((part) => part.length > 0);
+  return parts.length > 0 ? parts[parts.length - 1] : value;
+}
+
+function buildMetaLine(task) {
+  const modelAbbrev = abbreviateModel(task.model);
+  const showEngineLabel = !(modelAbbrev && modelAbbrev.toLowerCase().startsWith(task.engine.toLowerCase()));
+  const parts = [];
+  if (showEngineLabel) parts.push(task.engine);
+  const primary = [];
+  if (task.kind === 'subagent' && task.subtitle) primary.push(task.subtitle);
+  if (modelAbbrev) primary.push(modelAbbrev);
+  if (primary.length > 0) parts.push(primary.join(' · '));
+  const secondary = [];
+  if (task.effort) secondary.push(task.effort);
+  if (task.repo) secondary.push(basename(task.repo));
+  if (task.branch) secondary.push(task.branch);
+  if (task.pid) secondary.push(`PID ${task.pid}`);
+  if (task.currentActivity) secondary.push(task.currentActivity);
+  const hasContext = typeof task.contextTokens === 'number' && typeof task.contextWindow === 'number' && task.contextWindow > 0;
+  if (hasContext) secondary.push(`${formatTokenCount(task.contextTokens)}/${formatTokenCount(task.contextWindow)}`);
+  if (typeof task.tokensUsed === 'number') secondary.push(formatTokenCount(task.tokensUsed));
+  if (secondary.length > 0) parts.push(secondary.join(' · '));
+  return parts.join(' · ');
 }
 
 function groupBy(items, keyFn) {
