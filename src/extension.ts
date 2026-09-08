@@ -7,12 +7,20 @@ import * as path from 'node:path';
 import { BoardView } from './board-view.js';
 import { Scanner, ScanConfig } from './scanner.js';
 import { BoardWatcher } from './watcher.js';
-import { WebviewMessage, WebviewMessageType } from './model.js';
+import { TaskKind, WebviewMessage, WebviewMessageType } from './model.js';
 import { listFinishedHeartbeatFiles } from './sources/heartbeats.js';
 import { isProcessAlive } from './util/pid.js';
 import * as fs from 'node:fs/promises';
 
 const CONFIG_SECTION = 'workerBoard';
+
+// Komenda WEWNETRZNA, nieudokumentowana, rozszerzenia anthropic.claude-code
+// (zweryfikowana w bundlu wersji 2.1.263: pierwszy argument to sessionId,
+// reveal() gdy panel juz otwarty, w przeciwnym razie tworzy nowy). Moze
+// zniknac przy dowolnej aktualizacji Claude Code - stad kontrola obecnosci
+// przez getCommands() i try/catch wokol wywolania, nigdy zalozenie, ze
+// istnieje.
+const CLAUDE_CODE_OPEN_CONVERSATION_COMMAND = 'claude-vscode.editor.open';
 
 export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel('Worker Board');
@@ -115,9 +123,59 @@ function handleWebviewMessage(message: WebviewMessage, boardView: BoardView, out
     case WebviewMessageType.Kill:
       killTask(boardView, message.id, outputChannel);
       return;
+    case WebviewMessageType.OpenConversation:
+      openConversation(boardView, message.id, outputChannel);
+      return;
     default:
       return;
   }
+}
+
+// Identyfikator sesji do otwarcia pochodzi WYLACZNIE z przechowywanej
+// migawki (boardView.findTask), nigdy z tresci wiadomosci webview - ten sam
+// wzorzec co openPath/killTask powyzej. Rozwiazanie zalezy od rodzaju
+// klikanego wiersza: sesja otwiera sama siebie, subagent i worker
+// przekierowuja do sesji, do ktorej naleza (WorkerTask.sessionId - patrz
+// model.ts). Worker bez sessionId nigdy nie dociera tutaj, bo webview nie
+// robi go klikalnym w ogole.
+function openConversation(boardView: BoardView, id: string | undefined, outputChannel: vscode.OutputChannel): void {
+  if (!id) {
+    return;
+  }
+  const task = boardView.findTask(id);
+  if (!task) {
+    return;
+  }
+  const targetSessionId = task.kind === TaskKind.Session ? task.id : task.sessionId;
+  if (!targetSessionId) {
+    outputChannel.appendLine(`Brak sessionId do otwarcia rozmowy dla zadania ${id}`);
+    return;
+  }
+
+  vscode.commands.getCommands(true).then(
+    (commands) => {
+      if (!commands.includes(CLAUDE_CODE_OPEN_CONVERSATION_COMMAND)) {
+        const message = 'Nie udalo sie otworzyc rozmowy - wymaga zainstalowanego rozszerzenia Claude Code.';
+        vscode.window.showWarningMessage(message);
+        outputChannel.appendLine(`${message} Komenda ${CLAUDE_CODE_OPEN_CONVERSATION_COMMAND} nie jest zarejestrowana.`);
+        return;
+      }
+
+      // Drugi argument (prompt) celowo pomijamy - Claude Code potraktowalby
+      // niepusta wartosc jako tekst do wstawienia i pokazalby wlasny
+      // komunikat "Session is already open. Your prompt was not applied".
+      vscode.commands.executeCommand(CLAUDE_CODE_OPEN_CONVERSATION_COMMAND, targetSessionId).then(undefined, (error: unknown) => {
+        const message = 'Nie udalo sie otworzyc rozmowy w Claude Code.';
+        vscode.window.showWarningMessage(message);
+        outputChannel.appendLine(`${message} sessionId=${targetSessionId}: ${describeError(error)}`);
+      });
+    },
+    (error: unknown) => {
+      const message = 'Nie udalo sie sprawdzic dostepnosci komendy Claude Code.';
+      vscode.window.showWarningMessage(message);
+      outputChannel.appendLine(`${message}: ${describeError(error)}`);
+    }
+  );
 }
 
 function openPath(boardView: BoardView, id: string | undefined, pick: (task: { logPath?: string; transcriptPath?: string }) => string | undefined, outputChannel: vscode.OutputChannel): void {

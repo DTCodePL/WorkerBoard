@@ -28,6 +28,7 @@
     OpenLog: 'openLog',
     OpenTranscript: 'openTranscript',
     Kill: 'kill',
+    OpenConversation: 'openConversation',
     Ready: 'ready'
   };
 
@@ -124,8 +125,8 @@
       // potomkowie sesji: subagenci zagniezdzeni dowolnie gleboko + workery
       // dopiete przez sessionId), nigdy dla workerow "bez przypisania".
       const runningDescendants = collectRunningDescendants(session.id, subagentsByParent, attachedWorkersBySession.get(session.id) ?? []);
-      list.appendChild(buildCard(session, 0, runningDescendants));
-      appendChildrenRecursive(list, directChildren, subagentsByParent, 1);
+      list.appendChild(buildCard(session, 0, runningDescendants, session.title));
+      appendChildrenRecursive(list, directChildren, subagentsByParent, 1, session.title);
     }
     root.appendChild(list);
 
@@ -161,7 +162,7 @@
   // do rodzica, nie jako ciag rownorzednych wierszy. Rekurencyjnie: kazdy
   // subagent z wlasnymi dziecmi dostaje analogiczny wrapper na swoim
   // poziomie.
-  function appendChildrenRecursive(list, children, subagentsByParent, depth) {
+  function appendChildrenRecursive(list, children, subagentsByParent, depth, sessionTitle) {
     const ordered = sortByStartedAtDesc(children);
     if (ordered.length === 0) {
       return;
@@ -169,11 +170,11 @@
     const wrapper = document.createElement('div');
     wrapper.className = 'card-children';
     for (const task of ordered) {
-      wrapper.appendChild(buildCard(task, depth));
+      wrapper.appendChild(buildCard(task, depth, undefined, sessionTitle));
       // Tylko subagenci moga miec dalsze dzieci (workery sa zawsze lisciem).
       const grandchildren = subagentsByParent.get(task.id);
       if (grandchildren) {
-        appendChildrenRecursive(wrapper, grandchildren, subagentsByParent, depth + 1);
+        appendChildrenRecursive(wrapper, grandchildren, subagentsByParent, depth + 1, sessionTitle);
       }
     }
     list.appendChild(wrapper);
@@ -239,7 +240,7 @@
     return [...tasks].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   }
 
-  function buildCard(task, depth, runningDescendants) {
+  function buildCard(task, depth, runningDescendants, sessionTitle) {
     // Potomkowie Running sa liczone WYLACZNIE dla sesji (patrz render()) -
     // dla subagentow/workerow ten parametr zawsze przychodzi jako undefined.
     // To jest czysto prezentacyjne nadpisanie: TaskStatus w migawce zostaje
@@ -256,6 +257,31 @@
     if (isWaitingRow) {
       // Wygaszone, wracaja do pelnej widocznosci na hover/focus (patrz CSS).
       card.classList.add('card-waiting');
+    }
+
+    // Klikniecie wiersza otwiera rozmowe Claude Code odpowiadajaca RODZICOWI
+    // (sesja otwiera sama siebie, subagent i worker przekierowuja przez
+    // sessionId - patrz model.ts). Worker bez sessionId ("Bez przypisania")
+    // nie ma dokad przekierowac - wiersz zostaje nieklikalny, bez roli i
+    // bez tabindex, zgodnie z wymaganiem.
+    const targetSessionId = task.kind === TaskKind.Session ? task.id : task.sessionId;
+    if (targetSessionId) {
+      const openLabel = `Otwórz rozmowę: ${task.kind === TaskKind.Session ? task.title : (sessionTitle ?? task.title)}`;
+      card.classList.add('card-clickable');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.title = openLabel;
+      card.setAttribute('aria-label', openLabel);
+      const openConversation = () => {
+        vscode.postMessage({ type: WebviewMessageType.OpenConversation, id: task.id });
+      };
+      card.addEventListener('click', openConversation);
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openConversation();
+        }
+      });
     }
 
     const content = document.createElement('div');
@@ -418,7 +444,20 @@
     button.className = 'icon-btn';
     button.textContent = label;
     button.title = titleText;
-    button.addEventListener('click', onClick);
+    // Przycisk akcji siedzi wewnatrz klikalnego wiersza (patrz buildCard) -
+    // stopPropagation na obu typach zdarzen, zeby "Log"/"Transkrypt"/"Zabij"
+    // nie otwieraly przy okazji rozmowy w edytorze. Klawiatura osobno, bo
+    // keydown Enter/Spacja na przycisku dobiega do rodzica PRZED synteycznym
+    // click, ktory by go i tak zablokowal.
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      onClick(event);
+    });
+    button.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.stopPropagation();
+      }
+    });
     return button;
   }
 

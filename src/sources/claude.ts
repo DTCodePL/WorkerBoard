@@ -317,7 +317,13 @@ export class ClaudeSource {
         lastActivityAt: agentStat.mtimeMs,
         transcriptPath: agentJsonlPath,
         depth: meta.spawnDepth,
-        parentId: meta.parentAgentId ? `${sessionUuid}:agent-${meta.parentAgentId}` : sessionUuid
+        parentId: meta.parentAgentId ? `${sessionUuid}:agent-${meta.parentAgentId}` : sessionUuid,
+        // Zawsze sessionUuid korzenia drzewa, niezaleznie od glebokosci -
+        // uzywane przy otwieraniu rozmowy w edytorze (claude-vscode.editor.open
+        // przyjmuje wylacznie identyfikator sesji, subagent nie ma wlasnej
+        // zakladki). Pewniejsze niz wyluskiwanie prefiksu z WorkerTask.id,
+        // bo parentId od depth2 wskazuje na rodzica-subagenta, nie na sesje.
+        sessionId: sessionUuid
       });
     }
 

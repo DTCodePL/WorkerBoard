@@ -44,10 +44,15 @@ export interface WorkerTask {
   readonly transcriptPath?: string;
   readonly depth?: number;
   readonly parentId?: string;
-  // Wylacznie TaskKind.Worker (Spark/Codex): id sesji Claude, do ktorej
-  // wpisal ten worker (z env CLAUDE_CODE_SESSION_ID w worker-run.ps1). Pole
-  // opcjonalne - starsze rekordy i workery odpalone poza Claude Code go nie
-  // maja, trafiaja wtedy do grupy zapasowej "BEZ PRZYPISANIA".
+  // TaskKind.Worker (Spark/Codex): id sesji Claude, do ktorej wpisal ten
+  // worker (z env CLAUDE_CODE_SESSION_ID w worker-run.ps1) - opcjonalne,
+  // starsze rekordy i workery odpalone poza Claude Code go nie maja,
+  // trafiaja wtedy do grupy zapasowej "BEZ PRZYPISANIA".
+  // TaskKind.Subagent: ZAWSZE ustawione, na sessionUuid korzenia drzewa
+  // (niezaleznie od glebokosci zagniezdzenia) - to jest "pewniejsze zrodlo"
+  // niz wyluskiwanie prefiksu z WorkerTask.id przy otwieraniu rozmowy w
+  // edytorze, bo parentId dla subagenta glebszego niz depth1 wskazuje na
+  // rodzica-subagenta, nie na sesje.
   readonly sessionId?: string;
   // Metryki - doliczane WYLACZNIE dla zadan, ktore przeszly filtr Running
   // (patrz scanner.ts), nigdy dla calej migawki przed filtrowaniem. Kazde
@@ -97,6 +102,7 @@ export enum WebviewMessageType {
   OpenLog = 'openLog',
   OpenTranscript = 'openTranscript',
   Kill = 'kill',
+  OpenConversation = 'openConversation',
   Ready = 'ready'
 }
 

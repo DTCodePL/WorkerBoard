@@ -78,6 +78,19 @@ body {
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
+/* Wiersz klikalny otwiera odpowiadajaca mu rozmowe Claude Code (patrz
+   main.js) - jedyna wskazowka wizualna to kursor, istniejace podswietlenie
+   na :hover juz komunikuje interaktywnosc. Pierscien fokusu wylacznie z
+   tokenu VS Code, widoczny tylko przy nawigacji klawiatura. */
+.card-clickable {
+  cursor: pointer;
+}
+
+.card-clickable:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
 .card:last-child {
   border-bottom: none;
 }

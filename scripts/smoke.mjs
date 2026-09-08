@@ -122,8 +122,11 @@ function printTree(tasks) {
   const printNode = (task, depth, displayOverride) => {
     const indent = '  '.repeat(depth);
     const displayStatus = displayOverride ? `${task.status} -> WYSWIETLANE: w toku (potomek Running)` : task.status;
+    const targetSessionId = task.kind === 'session' ? task.id : task.sessionId;
+    const openTarget = targetSessionId ?? 'NIEKLIKALNY (brak sessionId)';
     console.log(`${indent}[${task.kind}] ${displayStatus} | ${task.title} | id=${task.id}${task.sessionId ? ` | sessionId=${task.sessionId}` : ''}`);
     console.log(`${indent}    metaLine="${buildMetaLine(task)}"`);
+    console.log(`${indent}    otwiera rozmowe: ${openTarget}`);
   };
 
   for (const session of sessions) {
