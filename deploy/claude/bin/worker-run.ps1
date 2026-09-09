@@ -1,3 +1,8 @@
+# PowerShell 7 jest WYMAGANY, mimo ze skladnia skryptu jest zgodna z 5.1.
+# Zmierzone 2026-09-09: to samo wywolanie Codexa konczy sie pod Windows
+# PowerShell 5.1 bledem 'stdin is not a terminal', a pod pwsh 7 przechodzi
+# (status=done, exit 0). Prog zostaje na 7.0, zeby uzytkownik dostal czytelny
+# komunikat zamiast mylacej awarii workera.
 #requires -Version 7.0
 <#
 .SYNOPSIS
@@ -12,6 +17,21 @@
     (nazwy, typy, wartosci status) musi zostac zachowane dokladnie tak, jak opisano
     w specyfikacji zadania.
 
+    Parametr -Mode wybiera podtryb Codexa:
+      - 'exec'   (domyslny) - dzisiejsze zachowanie, brief z -BriefFile jest wymagany
+                 i trafia do dziecka przez stdin.
+      - 'review' - "codex exec review" (przeglad kodu repozytorium). -BriefFile jest
+                 wtedy OPCJONALNY: jesli podany, jego tresc trafia do "codex exec review"
+                 jako niestandardowe instrukcje przegladu (przez stdin, tak jak w 'exec').
+                 Jesli pominiety, wrapper dokleja '--uncommitted' - CLI nie ma zadnego
+                 domyslnego zakresu i bez jednego z --uncommitted/--base/--commit albo
+                 instrukcji przegladu przerywa bledem (zweryfikowane na zywo); zakres
+                 mozna nadpisac przez -Passthru (np. '--base main').
+                 Tryb 'review' istnieje wylacznie dla -Engine codex. 'engine' w rekordzie
+                 stanu zostaje 'codex' takze w tym trybie - fakt, ze to przeglad, widac
+                 w polu 'title' (domyslnie "Przeglad kodu (codex review)", gdy -Title
+                 nie zostal podany).
+
 .PRZYKLADY
     .\worker-run.ps1 -Engine spark -Title "Refaktor tokenow" `
         -BriefFile C:\tmp\brief.md -Repo D:\projects\MyApp
@@ -19,6 +39,9 @@
     .\worker-run.ps1 -Engine codex -Title "Test wrappera" `
         -BriefFile C:\tmp\brief.md -Repo D:\projects\MyApp `
         -Model gpt-5.6-luna -Effort low
+
+    .\worker-run.ps1 -Engine codex -Mode review -Repo D:\projects\MyApp `
+        -Model gpt-5.6-sol -Effort high
 #>
 
 [CmdletBinding()]
@@ -27,10 +50,12 @@ param(
     [ValidateSet('spark', 'codex')]
     [string]$Engine,
 
-    [Parameter(Mandatory)]
+    # Mandatory tylko dla trybu 'exec' - sprawdzane recznie nizej, bo mandatoriness
+    # zalezy tu od wartosci -Mode, a nie da sie tego wyrazic samym atrybutem.
     [string]$Title,
 
-    [Parameter(Mandatory)]
+    # Mandatory tylko dla trybu 'exec'. W trybie 'review' jest opcjonalny - patrz
+    # opis -Mode w .OPIS powyzej.
     [string]$BriefFile,
 
     [Parameter(Mandatory)]
@@ -40,7 +65,12 @@ param(
 
     [string]$Effort,
 
-    [string[]]$Passthru
+    [string[]]$Passthru,
+
+    # 'exec' (domyslne) = dzisiejsze zachowanie bez zadnej zmiany.
+    # 'review' = "codex exec review" - dostepne wylacznie dla -Engine codex.
+    [ValidateSet('exec', 'review')]
+    [string]$Mode = 'exec'
 )
 
 Set-StrictMode -Version Latest
@@ -83,7 +113,26 @@ function Write-WorkerState {
 }
 
 # --- Walidacja wejscia (PRZED utworzeniem jakiegokolwiek rekordu stanu) --------
-if (-not (Test-Path -LiteralPath $BriefFile -PathType Leaf)) {
+if ($Mode -eq 'review' -and $Engine -ne 'codex') {
+    Write-Error "worker-run: tryb 'review' istnieje wylacznie dla -Engine codex (Spark go nie ma)."
+    exit 1
+}
+
+if (-not $Title) {
+    if ($Mode -eq 'review') {
+        $Title = 'Przeglad kodu (codex review)'
+    }
+    else {
+        Write-Error "worker-run: -Title jest wymagany w trybie '$Mode'."
+        exit 1
+    }
+}
+
+if ($Mode -eq 'exec' -and [string]::IsNullOrWhiteSpace($BriefFile)) {
+    Write-Error "worker-run: -BriefFile jest wymagany w trybie 'exec'."
+    exit 1
+}
+if ($BriefFile -and -not (Test-Path -LiteralPath $BriefFile -PathType Leaf)) {
     Write-Error "worker-run: plik briefu nie istnieje: $BriefFile"
     exit 1
 }
@@ -96,7 +145,8 @@ if (-not (Test-Path -LiteralPath $Repo -PathType Container)) {
 # Zmienna jest dziedziczona przez procesy potomne, wiec nie trzeba jej podawac
 # recznie - panel grupuje dzieki niej workery pod ich konwersacja.
 $sessionId = if ($env:CLAUDE_CODE_SESSION_ID) { $env:CLAUDE_CODE_SESSION_ID } else { $null }
-$briefFull = (Resolve-Path -LiteralPath $BriefFile).ProviderPath
+# briefFull moze zostac $null - tylko w trybie 'review' bez -BriefFile.
+$briefFull = if ($BriefFile) { (Resolve-Path -LiteralPath $BriefFile).ProviderPath } else { $null }
 $repoFull = (Resolve-Path -LiteralPath $Repo).ProviderPath
 
 # --- Domyslne model/effort per silnik ------------------------------------------
@@ -153,6 +203,9 @@ $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
 $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
 $briefContent = $null
+# Inicjalizacja PRZED if/else silnika: Set-StrictMode wywali blad przy odczycie
+# niezainicjalizowanej zmiennej w galezi 'spark', ktora tej flagi nie ustawia.
+$needsCodexStdin = $false
 
 if ($Engine -eq 'spark') {
     $briefWsl = ConvertTo-WslPath -WindowsPath $briefFull
@@ -173,22 +226,64 @@ if ($Engine -eq 'spark') {
 }
 else {
     # Brief podawany przez stdin - dlugi brief w cudzyslowach argumentu sie rozjezdza.
-    $briefContent = [System.IO.File]::ReadAllText($briefFull)
-    $psi.RedirectStandardInput = $true
+    # W trybie 'review' brief jest opcjonalny (patrz walidacja wejscia wyzej) - stdin
+    # uzywamy tylko wtedy, gdy faktycznie mamy co wyslac.
+    $needsCodexStdin = [bool]$briefFull
+    if ($needsCodexStdin) {
+        $briefContent = [System.IO.File]::ReadAllText($briefFull)
+        $psi.RedirectStandardInput = $true
+    }
 
     $psi.FileName = 'codex.cmd'
-    $codexArgs = @(
-        'exec',
-        '-s', 'workspace-write',
-        '--skip-git-repo-check',
-        '-C', $repoFull,
-        '-m', $Model,
-        '-c', "model_reasoning_effort=`"$Effort`""
-    )
+
+    if ($Mode -eq 'review') {
+        # "codex exec review --help" (zweryfikowane na zywo, codex-cli 0.153.4):
+        # - podkomenda 'review' NIE ma wlasnego -C/--cd ani -s/--sandbox (przeglad
+        #   niczego nie zapisuje) - -C dziala tylko przed nazwa podkomendy, bo
+        #   nalezy do parsera 'exec', nie 'review' (potwierdzone empirycznie:
+        #   'codex exec review -C .' konczy sie bledem "unexpected argument").
+        # - PROMPT to argument pozycyjny review'u; '-' czyta niestandardowe
+        #   instrukcje przegladu ze stdin, dokladnie jak w trybie 'exec'.
+        # - '--skip-git-repo-check' i '-m' review ma we wlasnym zestawie flag.
+        # - efort idzie przez to samo '-c model_reasoning_effort=...' co w 'exec' -
+        #   review dzieli ten sam mechanizm nadpisywania configu.
+        # - BEZ jednego z --uncommitted/--base/--commit LUB instrukcji przegladu
+        #   CLI PRZERYWA z bledem "Specify --uncommitted, --base, --commit, or
+        #   provide custom review instructions" (zweryfikowane na zywo - nie ma
+        #   zadnego domyslnego zakresu). Gdy brief nie zostal podany (brak tresci
+        #   do stdin), doklejamy wiec '--uncommitted' - to najlepiej pasuje do
+        #   glownego przypadku uzycia (przeglad przed pushem: co jeszcze nie jest
+        #   scommitowane) - chyba ze wywolujacy sam poda zakres przez -Passthru.
+        $codexArgs = @(
+            'exec',
+            '-C', $repoFull,
+            'review',
+            '--skip-git-repo-check',
+            '-m', $Model,
+            '-c', "model_reasoning_effort=`"$Effort`""
+        )
+        $passthruHasScope = $Passthru | Where-Object { $_ -in @('--uncommitted', '--base', '--commit') }
+        if (-not $needsCodexStdin -and -not $passthruHasScope) {
+            $codexArgs += '--uncommitted'
+        }
+    }
+    else {
+        $codexArgs = @(
+            'exec',
+            '-s', 'workspace-write',
+            '--skip-git-repo-check',
+            '-C', $repoFull,
+            '-m', $Model,
+            '-c', "model_reasoning_effort=`"$Effort`""
+        )
+    }
+
     if ($Passthru -and $Passthru.Count -gt 0) {
         $codexArgs += $Passthru
     }
-    $codexArgs += '-'
+    if ($needsCodexStdin) {
+        $codexArgs += '-'
+    }
 
     foreach ($a in $codexArgs) {
         $psi.ArgumentList.Add($a)
@@ -226,7 +321,7 @@ try {
     $statePath = Join-Path $stateDir "$id.json"
     $logPath = Join-Path $logDir "$id.log"
 
-    if ($Engine -eq 'codex') {
+    if ($needsCodexStdin) {
         $proc.StandardInput.Write($briefContent)
         $proc.StandardInput.Close()
     }
@@ -341,4 +436,6 @@ finally {
 if (-not $id -and $runError) {
     exit 1
 }
-exit ($exitCode ?? 1)
+# Bez operatora ?? - ten skrypt musi dzialac na Windows PowerShell 5.1,
+# ktory jest jedynym dostepnym na swiezo zainstalowanym Windowsie.
+if ($null -eq $exitCode) { exit 1 } else { exit $exitCode }

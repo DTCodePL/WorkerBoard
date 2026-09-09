@@ -90,9 +90,49 @@ równocześnie na konsolę i do logu.
   ich nie ma — poziomy to `minimal|low|medium|high`, domyślnie `medium`. CLI
   **nie waliduje** tego lokalnie: literówka przechodzi do API i dopiero tam
   wywala błąd, po zużyciu wiadomości. **Wrapper sprawdza tę kombinację sam i
-  przerywa przed startem** — ręczne wywołanie CLI tej ochrony nie ma.
-- Podtryb `codex exec review` (poza wrapperem, na gotowy przegląd kodu
-  repozytorium) zostaje jak był.
+  przerywa przed startem** — ręczne wywołanie CLI tej ochrony nie ma; walidacja
+  działa identycznie w `-Mode exec` i `-Mode review`.
+
+### Przegląd kodu (`-Mode review`) — też przez wrapper
+
+`codex exec review` (przegląd kodu repozytorium przed pushem) idzie **przez
+ten sam wrapper**, parametrem `-Mode review`, a nie jako gołe wywołanie CLI
+obok niego. Powód zmiany: gołe `codex exec review` nie zostawia żadnego
+rekordu stanu — dokładnie ta sama usterka co przy gołym `muse`/`codex exec`
+opisana wyżej — więc panel VS Code "Worker Board" nie widzi w ogóle, że
+przegląd trwa. Przegląd przed pushem potrafi iść kilkanaście minut, i to
+właśnie wtedy najbardziej chce się sprawdzić, czy proces jeszcze żyje, czy już
+padł. Zmierzone na żywo: dwa procesy `codex exec review` odpalone bez
+wrappera chodziły ponad dwie minuty, a katalog stanu nie miał ani jednego
+rekordu `running` — wszystkie leżące tam rekordy były `done`/`failed` ze
+starszych, niepowiązanych przebiegów.
+
+```powershell
+$env:USERPROFILE\.claude\bin\worker-run.ps1 `
+  -Engine codex -Mode review `
+  -Repo D:\projects\MyApp `
+  -Model gpt-5.6-sol -Effort high
+```
+
+- `-BriefFile` jest w tym trybie **opcjonalny**. Jeśli podany, jego treść trafia
+  do `codex exec review` jako niestandardowe instrukcje przeglądu — przez
+  stdin, dokładnie jak w `-Mode exec` (`review` też czyta `-` ze stdin).
+- **Bez `-BriefFile` wrapper dokleja `--uncommitted`.** `codex exec review`
+  nie ma żadnego domyślnego zakresu — bez jednego z `--uncommitted` / `--base`
+  / `--commit` albo bez instrukcji przeglądu CLI **przerywa** błędem `Specify
+  --uncommitted, --base, --commit, or provide custom review instructions`
+  (zweryfikowane na żywo). `--uncommitted` pasuje do głównego przypadku użycia
+  (przegląd przed pushem = to, co jeszcze nie jest scommitowane). Inny zakres
+  (`--base main`, `--commit <sha>`) podaje się przez `-Passthru` — wrapper
+  wtedy nie dokleja `--uncommitted` sam.
+- `engine` w rekordzie stanu zostaje `"codex"` także w tym trybie — panel
+  grupuje po silniku, nie po podtrybie. To, że to przegląd, widać w `title`:
+  jeśli wywołujący nie poda `-Title`, wrapper wpisuje domyślnie
+  `"Przeglad kodu (codex review)"`.
+- `review` **nie ma** własnego `-C`/`--cd` ani `-s`/`--sandbox` (przegląd
+  niczego nie zapisuje) — wrapper podaje `-C <repo>` przed nazwą podkomendy
+  `review` (należy do parsera `exec`, nie `review`), a `-s` w ogóle pomija.
+- Dostępny wyłącznie dla `-Engine codex` — Spark tego trybu nie ma.
 
 **Znana usterka środowiska:** `SSL_CERT_FILE` i `NODE_EXTRA_CA_CERTS` wskazują
 na nieistniejący `C:\Users\<uzytkownik>\certs\win-ca-bundle.pem`, co wywala Codexowi

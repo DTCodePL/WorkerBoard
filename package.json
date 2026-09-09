@@ -2,7 +2,7 @@
   "name": "worker-board",
   "displayName": "Worker Board",
   "description": "Live view of AI agent tasks: Claude Code sessions and subagents, Spark and Codex workers, grouped by conversation. / Podglad zadan agentow AI na zywo, zgrupowanych po konwersacji.",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "publisher": "dtcode",
   "license": "MIT",
   "icon": "media/icon.png",

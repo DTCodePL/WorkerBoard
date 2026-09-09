@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 Wszystkie istotne zmiany w Worker Board są opisane poniżej — najpierw po angielsku,
 pod każdą wersją po polsku.
 
+## [0.8.1] - 2026-09-09
+
+### Fixed
+
+- A session with no `ai-title` yet no longer falls back to the raw project
+  directory slug (`d--projects-DTCode-…`). It now shows the start of the
+  first real user message, matching what the Claude Code tab displays —
+  including slash commands, taken from the `<command-name>` wrapper rather
+  than the first line, because the first line is markup.
+
+### Changed
+
+- `worker-run.ps1` gained `-Mode review`, so `codex exec review` runs through
+  the wrapper and therefore appears in the panel. Pre-push reviews were
+  previously invisible by design, which is exactly when you most want to know
+  whether one is still running. Without a brief the wrapper adds
+  `--uncommitted`, since the CLI has no default scope.
+- The wrapper's PowerShell 7 requirement is now documented instead of implied:
+  measured on 2026-09-09, the same Codex call fails under Windows PowerShell
+  5.1 with `stdin is not a terminal` and succeeds under `pwsh` 7. The
+  installer itself still runs on 5.1.
+
+**Naprawione** — sesja bez `ai-title` nie pokazuje już sluga katalogu, tylko
+początek pierwszej prawdziwej wiadomości użytkownika (komendy ukośnikowe
+czytane ze znacznika `<command-name>`, bo pierwsza linia to znacznik).
+**Zmienione** — `worker-run.ps1` ma tryb `-Mode review`, więc przegląd kodu
+Codexa jest widoczny w panelu; bez briefu wrapper dokłada `--uncommitted`.
+Wymóg PowerShell 7 dla wrappera jest teraz udokumentowany i zmierzony —
+instalator nadal działa na 5.1.
+
+## [0.8.0] - 2026-09-08
+
+### Added
+
+- Clicking a row opens the corresponding Claude Code conversation. Rows for
+  sessions, subagents and workers all lead to the **parent conversation**,
+  since a subagent has no tab of its own. Workers with no attribution stay
+  unclickable. This relies on `claude-vscode.editor.open`, an internal command
+  of the Claude Code extension (verified against 2.1.263); if it ever
+  disappears the panel degrades to a warning instead of breaking.
+
+**Dodane** — kliknięcie wiersza otwiera odpowiadającą mu rozmowę Claude Code;
+sesja, subagent i worker prowadzą do konwersacji rodzica. Opiera się na
+wewnętrznej komendzie rozszerzenia Claude Code, więc jej zniknięcie degraduje
+się do ostrzeżenia, a nie do awarii panelu.
+
 ## [0.7.1] - 2026-09-06
 
 ### Changed

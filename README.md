@@ -118,6 +118,7 @@ each level means.
 | A **Claude Code** you're already using | seeing Claude Code sessions and subagents in the panel | Level 1 (Marketplace install) — nothing further to install |
 | **WSL** with an **`Ubuntu*`** distribution (`Ubuntu-22.04`, `Ubuntu-24.04`, …) + the `muse` command in it | seeing **Spark** workers | Level 2 — Spark only |
 | **`codex` on PATH** | seeing **Codex** workers | Level 2 — Codex only |
+| **PowerShell 7** (`pwsh`, e.g. `winget install --id Microsoft.PowerShell`) | running `worker-run.ps1` — measured 2026-09-09: the same Codex call fails under Windows PowerShell 5.1 with `stdin is not a terminal` and succeeds under `pwsh` 7 | Level 2 — both engines |
 | **Node.js >= 20** (recommended: **26**), **npm**, and **`@vscode/vsce`** (installed on demand via `npx`) | building the extension from source | Level 2, route A (installer) only |
 
 Node.js, npm and `@vscode/vsce` are **not** needed to install or run the
@@ -489,6 +490,7 @@ Wymagania podzielone na **poziomy** — co znaczy który, patrz
 | Już używany **Claude Code** | zobaczenie sesji i subagentów Claude Code w panelu | Poziom 1 (instalacja ze sklepu) — nic więcej nie trzeba instalować |
 | **WSL** z dystrybucją **`Ubuntu*`** (`Ubuntu-22.04`, `Ubuntu-24.04`, …) + polecenie `muse` w niej | zobaczenie workerów **Spark** | Poziom 2 — tylko Spark |
 | **`codex` w PATH** | zobaczenie workerów **Codex** | Poziom 2 — tylko Codex |
+| **PowerShell 7** (`pwsh`, np. `winget install --id Microsoft.PowerShell`) | uruchamianie `worker-run.ps1` — zmierzone 2026-09-09: to samo wywołanie Codexa pada pod Windows PowerShell 5.1 z `stdin is not a terminal`, a pod `pwsh` 7 przechodzi | Poziom 2 — oba silniki |
 | **Node.js >= 20** (zalecane: **26**), **npm** oraz **`@vscode/vsce`** (instalowany na żądanie przez `npx`) | budowa rozszerzenia ze źródeł | Poziom 2, droga A (instalator) |
 
 Node.js, npm i `@vscode/vsce` **nie** są potrzebne do instalacji ani

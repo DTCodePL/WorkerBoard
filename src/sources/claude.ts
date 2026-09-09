@@ -78,7 +78,32 @@ interface SessionMeta {
   // Ta definicja jest niezalezna od reguly statusu powyzej - dotyczy tylko
   // prezentacji czasu trwania.
   readonly turnStartedAtMs: number | undefined;
+  // Podglad PIERWSZEJ "prawdziwej" wiadomosci user w pliku (pomijajac
+  // tool_result-only i marker przerwania - ta sama "kwalifikacja" co przy
+  // latestQualifyingUserTimestampMs powyzej, tylko pierwsze wystapienie
+  // zamiast ostatniego). Zastepczy tytul, gdy sesja nie ma jeszcze wpisu
+  // ai-title. undefined, gdy zaden user message w pliku sie nie kwalifikuje.
+  readonly firstRealUserMessagePreview: string | undefined;
 }
+
+// Dlugosc podgladu tytulu zastepczego z pierwszej wiadomosci user.
+const TITLE_PREVIEW_MAX_LENGTH = 60;
+
+// Wywolania komend ukosnikowych (np. "/implement-ado-feature-zebrani") sa w
+// transkrypcie rozwijane w wieloliniowy wrapper:
+//   <command-message>...</command-message>
+//   <command-name>/nazwa-komendy</command-name>
+//   <command-args>...</command-args>
+// Zweryfikowane na sesji 2aa8804c-54b0-4ab8-9cee-174db37b7566: PIERWSZA linia
+// tego wrappera to "<command-message>...", nie sama komenda - branie
+// doslownie "pierwszej niepustej linii" dalo tam smieciowy tytul zamiast
+// "/implement-ado-feature-zebrani", ktory faktycznie pokazuje zakladka VS
+// Code. Potwierdzone tez w bundlu zainstalowanego rozszerzenia
+// anthropic.claude-code (funkcja budujaca tytul zakladki szuka dokladnie
+// tego wzorca w calej tresci wiadomosci, nie tylko w pierwszej linii) - stad
+// szukamy </command-name> w calym tekscie PRZED sięgnieciem po regule
+// "pierwsza niepusta linia".
+const COMMAND_NAME_TAG_PATTERN = /<command-name>(.*?)<\/command-name>/;
 
 // Tolerancja na rozjazd zegarow i opoznienie zapisu przy porownywaniu mtime
 // pliku agenta z timestampem najpozniejszej notyfikacji kolejki.
@@ -185,7 +210,9 @@ export class ClaudeSource {
         const sessionMeta = await this.sessionMetaCache.getOrCompute(sessionFilePath, extractSessionMeta, (message) =>
           warnings.push(message)
         );
-        const title = sessionMeta?.title ?? slug;
+        // Lancuch tytulu: ai-title -> podglad pierwszej prawdziwej wiadomosci
+        // user -> slug katalogu (dopiero gdy oba powyzsze zawiodly).
+        const title = sessionMeta?.title ?? sessionMeta?.firstRealUserMessagePreview ?? slug;
         const repo = sessionMeta?.cwd ?? slug;
 
         // Status wylacznie na dowodzie pozytywnym - patrz komentarz przy
@@ -505,6 +532,9 @@ function extractSessionMeta(content: string): SessionMeta {
   // tool_result-only), bo to inne zastosowanie - prezentacja czasu, nie
   // dowod stanu.
   let latestNonInterruptUserTimestampMs: number | undefined;
+  // Ustawiane raz - pierwsza kwalifikujaca sie wiadomosc user wygrywa, kolejne
+  // sa ignorowane (w przeciwienstwie do trackerow "najpozniejszy" powyzej).
+  let firstRealUserMessagePreview: string | undefined;
 
   for (const line of content.split('\n')) {
     if (!line) {
@@ -585,6 +615,16 @@ function extractSessionMeta(content: string): SessionMeta {
     const text = extractMessageText(blocks);
     const isInterrupt = isInterruptMarker(text);
 
+    // Ta sama "kwalifikacja" jak przy latestQualifyingUserTimestampMs
+    // (pomijamy tool_result-only i marker przerwania), ale liczy sie
+    // WYLACZNIE pierwsze trafienie - dalsze wiadomosci juz nie nadpisuja.
+    if (firstRealUserMessagePreview === undefined && hasNonResultBlock && !isInterrupt) {
+      const preview = derivePreviewFromUserMessageText(text);
+      if (preview !== undefined) {
+        firstRealUserMessagePreview = preview;
+      }
+    }
+
     if (!isInterrupt && validTimestampMs !== undefined) {
       if (latestNonInterruptUserTimestampMs === undefined || validTimestampMs > latestNonInterruptUserTimestampMs) {
         latestNonInterruptUserTimestampMs = validTimestampMs;
@@ -608,8 +648,33 @@ function extractSessionMeta(content: string): SessionMeta {
     lastAssistantTimestampMs,
     lastAssistantHasUnpairedOwnToolUse,
     hasNewerQualifyingUserMessage,
-    turnStartedAtMs: latestNonInterruptUserTimestampMs
+    turnStartedAtMs: latestNonInterruptUserTimestampMs,
+    firstRealUserMessagePreview
   };
+}
+
+// Patrz komentarz przy COMMAND_NAME_TAG_PATTERN - komenda ukosnikowa ma
+// pierwszenstwo, bo dosłowna "pierwsza niepusta linia" trafia w linie
+// "<command-message>...", nie w sama komende. Poza tym przypadkiem trzymamy
+// sie doslownie specyfikacji: pierwsza niepusta linia, przycieta.
+function derivePreviewFromUserMessageText(text: string): string | undefined {
+  const commandNameMatch = COMMAND_NAME_TAG_PATTERN.exec(text);
+  const commandName = commandNameMatch?.[1]?.trim();
+  if (commandName) {
+    return truncateTitlePreview(commandName);
+  }
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (line.length > 0) {
+      return truncateTitlePreview(line);
+    }
+  }
+  return undefined;
+}
+
+function truncateTitlePreview(line: string): string {
+  return line.length > TITLE_PREVIEW_MAX_LENGTH ? `${line.slice(0, TITLE_PREVIEW_MAX_LENGTH).trimEnd()}…` : line;
 }
 
 function extractMessageText(blocks: unknown): string {
